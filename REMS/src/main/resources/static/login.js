@@ -29,12 +29,12 @@ const OAUTH = {
 // 로그인 시작 — PKCE 없이 인가 URL 생성
 // =====================================================
 function startSocialLogin(provider) {
-    if (!window.APP_CONFIG) { showToast('설정(config.js)을 불러오지 못했습니다'); return; }
+    if (!window.APP_CONFIG) { showToast('설정 파일을 불러오지 못했습니다'); return; }
 
     const cfg = OAUTH[provider];
     if (!cfg) { showToast('지원하지 않는 로그인 방식입니다'); return; }
     if (!cfg.clientId || cfg.clientId.startsWith('YOUR_')) {
-        showToast(`${labelOf(provider)} client_id 가 설정되지 않았습니다 (config.js 확인)`);
+        showToast(`${labelOf(provider)} 클라이언트가 설정되지 않았습니다.`);
         return;
     }
 
