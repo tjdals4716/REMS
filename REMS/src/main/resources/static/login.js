@@ -38,7 +38,7 @@ function startSocialLogin(provider) {
         return;
     }
 
-    const redirectUri = "http://localhost:8085/oauth-redirect.html";
+    const redirectUri = "http://rems-nu.vercel.app/oauth-redirect.html";
 
     // provider 식별을 위해 state 에 담아 보냄 (콜백이 다른 출처여도 읽힘)
     const state = provider + '__' + randomState();
