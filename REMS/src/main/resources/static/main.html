@@ -161,7 +161,7 @@
 <script src="config.js"></script>
 <!-- 앱 스크립트 -->
 <script src="main.js"></script>
-<!-- 카카오맵 SDK 동적 로드 -->
+<!-- 네이버맵 SDK 동적 로드 -->
 <script>
     (function () {
         debugger;
@@ -173,7 +173,7 @@
         }
         var s = document.createElement('script');
         // 네이버 지도 API v3 URL 호출
-        s.src = 'https://openapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=' + key;
+        s.src = 'https://openapi.map.naver.com/openapi/v3/maps.js?submodules=geocoder&ncpKeyId=' + key;
         s.onload = function () {
             // 네이버 지도는 로드 완료 후 바로 initMap 호출 가능
             if (typeof initMap === 'function') initMap();

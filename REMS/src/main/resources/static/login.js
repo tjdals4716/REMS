@@ -6,7 +6,7 @@
 // =====================================================
 
 const CFG = window.APP_CONFIG || {};
-const SUCCESS_REDIRECT = CFG.SUCCESS_REDIRECT || 'main.html';
+const SUCCESS_REDIRECT = 'main.html';
 
 // provider 별 인가 엔드포인트 + config.js 의 client_id 매핑
 const OAUTH = {
@@ -38,7 +38,7 @@ function startSocialLogin(provider) {
         return;
     }
 
-    const redirectUri = CFG.OAUTH_REDIRECT_URI;
+    const redirectUri = "http://localhost:8085/oauth-redirect.html";
 
     // provider 식별을 위해 state 에 담아 보냄 (콜백이 다른 출처여도 읽힘)
     const state = provider + '__' + randomState();
