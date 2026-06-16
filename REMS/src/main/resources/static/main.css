@@ -92,7 +92,7 @@ html, body { height: 100%; overflow: hidden; font-family: var(--font); backgroun
 .map-ctrl-btn:active { background: var(--gray-100); }
 
 #add-btn-float {
-    position: absolute; right: 14px; bottom: 150px; z-index: 50;
+    position: absolute; right: 14px; bottom: 235px; z-index: 50;
     width: 52px; height: 52px; border-radius: 16px;
     background: var(--blue); border: none; color: var(--white);
     box-shadow: var(--shadow-md); display: flex; align-items: center;
@@ -402,7 +402,7 @@ html, body { height: 100%; overflow: hidden; font-family: var(--font); backgroun
 }
 #map-picker-crosshair.show { display: block; }
 #map-picker-confirm {
-    display: none; position: absolute; bottom: 16px; left: 50%; z-index: 150;
+    display: none; position: absolute; bottom: 90px; left: 50%; z-index: 150;
     transform: translateX(-50%);
     background: var(--blue); color: var(--white);
     border: none; border-radius: 14px;

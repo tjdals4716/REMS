@@ -1,57 +1,179 @@
 // =====================================================
-// DATA STORE
+// DATA STORE  (백엔드 API 연동)
 // =====================================================
-const DB_KEY = 'mybuilding_v1';
+// ★ 배포 시 이 값 하나만 변경하면 모든 API 호출 도메인이 바뀝니다.
+const API_BASE_URL = 'http://localhost:8085';
 
-function loadData() {
+// 공통 fetch 응답 처리
+async function handleResponse(res) {
+    // 인증 만료/실패 → 로그인 페이지로
+    if (res.status === 401 || res.status === 403) {
+        redirectToLogin();
+        throw new Error('인증이 만료되었습니다');
+    }
+    if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(text || (res.status + ' ' + res.statusText));
+    }
+    if (res.status === 204) return null;
+    return res.json();
+}
+
+// ★ login.js / oauth-redirect.html 이 토큰을 저장하는 키와 동일하게 맞춤
+const TOKEN_KEY = 'accessToken';
+
+// 저장된 JWT 토큰
+function getToken() { return localStorage.getItem(TOKEN_KEY) || ''; }
+
+// JWT payload 디코드 (base64url) — 서버 호출 없이 토큰 내용을 읽음
+function decodeJwt(token) {
     try {
-        return JSON.parse(localStorage.getItem(DB_KEY)) || { buildings: [] };
-    } catch { return { buildings: [] }; }
+        const part = token.split('.')[1];
+        if (!part) return null;
+        let b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+        while (b64.length % 4) b64 += '=';
+        const json = decodeURIComponent(
+            atob(b64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')
+        );
+        return JSON.parse(json);
+    } catch { return null; }
 }
 
-function saveData(data) {
-    localStorage.setItem(DB_KEY, JSON.stringify(data));
+// 현재 로그인된 사용자 uid
+// 1) JWT 토큰의 subject 에서 추출  2) 저장된 currentUser 객체에서 추출
+function getUid() {
+    const t = getToken();
+    if (t) {
+        const p = decodeJwt(t);
+        // 백엔드 JwtTokenProvider가 uid를 subject(sub)에 넣음. 다르면 후보 조정.
+        if (p && (p.sub || p.uid || p.username)) return p.sub || p.uid || p.username;
+    }
+    // oauth-redirect.html 이 저장한 사용자 객체(UserDTO)에서 uid 추출
+    try {
+        const cu = JSON.parse(localStorage.getItem('currentUser') || 'null');
+        if (cu && cu.uid) return cu.uid;
+    } catch (_) {}
+    return '';
 }
 
-let state = loadData();
+// 토큰 존재 + 만료 여부 검사
+function isTokenValid() {
+    const t = getToken();
+    if (!t) return false;
+    const p = decodeJwt(t);
+    if (!p) return false;
+    if (p.exp && Date.now() >= p.exp * 1000) return false; // 만료됨
+    return true;
+}
 
-// Demo data if empty
-if (state.buildings.length === 0) {
-    state.buildings = [
-        {
-            id: 'b1', name: '강남 상가빌딩', address: '서울 강남구 역삼동 823-5', type: 'commercial',
-            lat: 37.4979, lng: 127.0276, floors: 5, totalUnits: 8,
-            memo: '1층 편의점, 2-3층 사무실, 4-5층 주거',
-            units: [
-                { id: 'u1', floor: 1, name: '101호', type: 'commercial', status: 'occupied', area: 82, tenant: '세븐일레븐', deposit: 5000, rent: 250, manage: 30, contractStart: '2023-01-01', contractEnd: '2025-12-31', memo: '장기계약' },
-                { id: 'u2', floor: 2, name: '201호', type: 'office', status: 'occupied', area: 45, tenant: '(주)테크스타트', deposit: 2000, rent: 120, manage: 15, contractStart: '2024-03-01', contractEnd: '2025-02-28', memo: '' },
-                { id: 'u3', floor: 2, name: '202호', type: 'office', status: 'empty', area: 40, tenant: '', deposit: 0, rent: 0, manage: 0, contractStart: '', contractEnd: '', memo: '인테리어 완료' },
-                { id: 'u4', floor: 3, name: '301호', type: 'office', status: 'expiring', area: 50, tenant: '김철수 세무사', deposit: 2500, rent: 130, manage: 15, contractStart: '2023-04-01', contractEnd: '2025-03-31', memo: '재계약 협의중' },
-                { id: 'u5', floor: 4, name: '401호', type: 'residential', status: 'occupied', area: 65, tenant: '이민수', deposit: 30000, rent: 0, manage: 10, contractStart: '2024-06-01', contractEnd: '2026-05-31', memo: '전세' },
-                { id: 'u6', floor: 5, name: '501호', type: 'residential', status: 'empty', area: 60, tenant: '', deposit: 0, rent: 0, manage: 0, contractStart: '', contractEnd: '', memo: '수리 필요' },
-            ]
-        },
-        {
-            id: 'b2', name: '마포 주거용 빌라', address: '서울 마포구 서교동 407-12', type: 'residential',
-            lat: 37.5537, lng: 126.9137, floors: 4, totalUnits: 6,
-            memo: '전층 주거용',
-            units: [
-                { id: 'u7', floor: 1, name: '101호', type: 'residential', status: 'occupied', area: 33, tenant: '박지원', deposit: 15000, rent: 0, manage: 5, contractStart: '2023-07-01', contractEnd: '2025-06-30', memo: '' },
-                { id: 'u8', floor: 1, name: '102호', type: 'residential', status: 'expiring', area: 33, tenant: '최수진', deposit: 8000, rent: 60, manage: 5, contractStart: '2024-01-01', contractEnd: '2025-12-31', memo: '만기시 퇴거 예정' },
-                { id: 'u9', floor: 2, name: '201호', type: 'residential', status: 'occupied', area: 40, tenant: '정호준', deposit: 20000, rent: 0, manage: 5, contractStart: '2024-09-01', contractEnd: '2026-08-31', memo: '' },
-                { id: 'u10', floor: 3, name: '301호', type: 'residential', status: 'occupied', area: 40, tenant: '한미영', deposit: 9000, rent: 65, manage: 5, contractStart: '2023-11-01', contractEnd: '2025-10-31', memo: '' },
-                { id: 'u11', floor: 4, name: '401호', type: 'residential', status: 'empty', area: 45, tenant: '', deposit: 0, rent: 0, manage: 0, contractStart: '', contractEnd: '', memo: '대수선 완료' },
-                { id: 'u12', floor: 4, name: '402호', type: 'residential', status: 'occupied', area: 45, tenant: '송민지', deposit: 10000, rent: 70, manage: 5, contractStart: '2024-04-01', contractEnd: '2026-03-31', memo: '' },
-            ]
-        }
-    ];
-    saveData(state);
+// 인증 헤더 (JWT를 Authorization 헤더로 전송)
+function authHeaders(withJson) {
+    const h = {};
+    if (withJson) h['Content-Type'] = 'application/json';
+    const t = getToken();
+    if (t) h['Authorization'] = 'Bearer ' + t;
+    return h;
+}
+
+// 로그인 페이지로 이동 (중복 알림 + 무한 리다이렉트 방지)
+let _authRedirecting = false;
+function redirectToLogin() {
+    if (_authRedirecting) return;
+    _authRedirecting = true;
+
+    // login.html이 제대로 열리지 않고 main 페이지가 계속 다시 로드되는 경우
+    // 무한 알림을 막기 위한 안전장치
+    const tries = parseInt(sessionStorage.getItem('auth_redirect_count') || '0', 10);
+    if (tries >= 2) {
+        console.error('[auth] login.html로 이동에 실패했습니다. ' +
+            'login.html이 현재 서버 경로(예: src/main/resources/static/login.html)에 존재하는지 확인하세요.');
+        return; // 더 이상 alert/이동을 반복하지 않음
+    }
+    sessionStorage.setItem('auth_redirect_count', String(tries + 1));
+
+    alert('토큰이 만료되거나 유효하지 않습니다. 다시 로그인해주세요.');
+    logout();
+    location.href = 'login.html';
+}
+
+// 토큰이 유효하지 않으면 로그인 페이지로 보냄. 유효하면 true 반환
+function requireAuthOrRedirect() {
+    if (!isTokenValid()) { redirectToLogin(); return false; }
+    sessionStorage.removeItem('auth_redirect_count'); // 정상 인증 → 루프 카운터 초기화
+    return true;
+}
+
+// 로그인(아이디/비번) — 소셜 로그인을 쓰면 사용 안 함. 콘솔 테스트용으로만 유지.
+async function login(uid, password) {
+    const res = await fetch(`${API_BASE_URL}/user/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid, password })
+    });
+    if (!res.ok) throw new Error('로그인 실패 (' + res.status + ')');
+    const jwt = await res.json(); // JWTDTO: { token, user ... }
+    if (!jwt.token) throw new Error('토큰을 받지 못했습니다 (JWTDTO 필드명 확인)');
+    localStorage.setItem(TOKEN_KEY, jwt.token);
+    if (jwt.user) localStorage.setItem('currentUser', JSON.stringify(jwt.user));
+    return jwt;
+}
+
+// 로그아웃: 저장된 인증 정보 전부 제거 (login.js가 토큰 존재만 보고 되돌리는 루프 방지)
+function logout() {
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('currentUser');
+    localStorage.removeItem('auth');
+}
+
+// 백엔드 API 호출 모음 (모든 요청에 uid + JWT 포함)
+const Api = {
+    // 건물 (/building)
+    getBuildings: () =>
+        fetch(`${API_BASE_URL}/building/all/${getUid()}`, { headers: authHeaders() }).then(handleResponse),
+    getBuilding: (id) =>
+        fetch(`${API_BASE_URL}/building/id/${getUid()}/${id}`, { headers: authHeaders() }).then(handleResponse),
+    createBuilding: (dto) =>
+        fetch(`${API_BASE_URL}/building/${getUid()}`, { method: 'POST', headers: authHeaders(true), body: JSON.stringify(dto) }).then(handleResponse),
+    updateBuilding: (id, dto) =>
+        fetch(`${API_BASE_URL}/building/${getUid()}/${id}`, { method: 'PUT', headers: authHeaders(true), body: JSON.stringify(dto) }).then(handleResponse),
+    deleteBuilding: (id) =>
+        fetch(`${API_BASE_URL}/building/delete/${getUid()}/${id}`, { method: 'DELETE', headers: authHeaders() }).then(handleResponse),
+    searchBuildings: (keyword) =>
+        fetch(`${API_BASE_URL}/building/search/${getUid()}?keyword=${encodeURIComponent(keyword)}`, { headers: authHeaders() }).then(handleResponse),
+
+    // 호실 (/unit)
+    createUnit: (buildingId, dto) =>
+        fetch(`${API_BASE_URL}/unit/${getUid()}/building/${buildingId}`, { method: 'POST', headers: authHeaders(true), body: JSON.stringify(dto) }).then(handleResponse),
+    updateUnit: (id, dto) =>
+        fetch(`${API_BASE_URL}/unit/${getUid()}/${id}`, { method: 'PUT', headers: authHeaders(true), body: JSON.stringify(dto) }).then(handleResponse),
+    deleteUnit: (id) =>
+        fetch(`${API_BASE_URL}/unit/delete/${getUid()}/${id}`, { method: 'DELETE', headers: authHeaders() }).then(handleResponse),
+};
+
+// 전역 상태 (서버에서 불러온 건물 목록 캐시)
+let state = { buildings: [] };
+
+// 서버에서 전체 건물(+호실)을 불러와 state에 저장
+async function loadData() {
+    try {
+        const buildings = await Api.getBuildings();
+        // 백엔드 id(Long) -> 문자열로 정규화 (기존 '=== id' 비교 로직 그대로 동작)
+        (buildings || []).forEach(b => {
+            b.id = String(b.id);
+            b.units = (b.units || []).map(u => ({ ...u, id: String(u.id) }));
+        });
+        state.buildings = buildings || [];
+    } catch (e) {
+        state.buildings = [];
+        if (typeof showToast === 'function') showToast('서버 연결 실패: ' + e.message);
+    }
+    return state;
 }
 
 // =====================================================
 // MAP
 // =====================================================
-let map, geocoder;
+let map; // 네이버는 geocoder 객체를 따로 선언할 필요가 없습니다.
 let markers = [];
 let overlays = [];
 let pickerMode = false;
@@ -64,33 +186,35 @@ const STATUS_COLOR = { empty: '#dc2626', occupied: '#0d9451', expiring: '#d97706
 const STATUS_LABEL = { empty: '공실', occupied: '임차', expiring: '만기임박' };
 const TYPE_EMOJI = { commercial: '🏪', residential: '🏠', office: '🏢', mixed: '🏗️' };
 
-function initMap() {
+async function initMap() {
+    if (!requireAuthOrRedirect()) return;
     const container = document.getElementById('map');
 
-    // Fallback center: Seoul
-    const center = new kakao.maps.LatLng(37.5665, 126.9780);
+    // Fallback center: Seoul (네이버 좌표계)
+    const center = new naver.maps.LatLng(37.5665, 126.9780);
 
-    map = new kakao.maps.Map(container, {
+    // 네이버 지도 생성 (줌 레벨 14가 카카오의 7 정도와 비슷합니다)
+    map = new naver.maps.Map(container, {
         center: center,
-        level: 7
+        zoom: 14,
+        zoomControl: false // 커스텀 버튼을 쓰므로 기본 컨트롤은 숨김
     });
 
-    geocoder = new kakao.maps.services.Geocoder();
-
-    kakao.maps.event.addListener(map, 'click', function(e) {
+    naver.maps.Event.addListener(map, 'click', function(e) {
         if (pickerMode) {
-            pickerLatlng = e.latLng;
+            pickerLatlng = e.coord; // 네이버는 e.coord에 좌표가 담깁니다.
         }
     });
 
+    await loadData();
     renderMarkers();
     updateStats();
     showBuildingList();
     showSheet('');
 
-    // Zoom controls
-    document.getElementById('zoom-in-btn').onclick = () => map.setLevel(map.getLevel() - 1);
-    document.getElementById('zoom-out-btn').onclick = () => map.setLevel(map.getLevel() + 1);
+    // Zoom controls (네이버는 숫자가 클수록 확대됩니다. 카카오와 반대)
+    document.getElementById('zoom-in-btn').onclick = () => map.setZoom(map.getZoom() + 1);
+    document.getElementById('zoom-out-btn').onclick = () => map.setZoom(map.getZoom() - 1);
     document.getElementById('my-location-btn').onclick = gotoMyLocation;
     document.getElementById('add-btn-float').onclick = startAddBuilding;
     document.getElementById('map-picker-confirm').onclick = confirmPickerLocation;
@@ -99,9 +223,9 @@ function initMap() {
 function gotoMyLocation() {
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(pos => {
-            const latlng = new kakao.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
+            const latlng = new naver.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
             map.setCenter(latlng);
-            map.setLevel(4);
+            map.setZoom(16); // 내 위치는 확대해서 보여줌
         });
     } else {
         showToast('위치 권한이 필요합니다');
@@ -141,12 +265,16 @@ function renderMarkers() {
       </div>
     `;
 
-        const overlay = new kakao.maps.CustomOverlay({
-            position: new kakao.maps.LatLng(b.lat, b.lng),
-            content: content,
-            yAnchor: 1
+        // 네이버는 Marker 객체의 icon: { content } 속성으로 HTML 커스텀 마커를 지원합니다.
+        const overlay = new naver.maps.Marker({
+            position: new naver.maps.LatLng(b.lat, b.lng),
+            map: map,
+            icon: {
+                content: content,
+                size: new naver.maps.Size(70, 40),
+                anchor: new naver.maps.Point(0, 0) // CSS transform으로 중심을 맞췄으므로 여기선 0,0 처리
+            }
         });
-        overlay.setMap(map);
         overlays.push(overlay);
     });
 }
@@ -178,7 +306,8 @@ function selectBuilding(id) {
     if (!currentBuilding) return;
 
     if (typeof map !== 'undefined' && map) {
-        map.panTo(new kakao.maps.LatLng(currentBuilding.lat, currentBuilding.lng));
+        // 카카오 LatLng를 네이버 LatLng로 변경
+        map.panTo(new naver.maps.LatLng(currentBuilding.lat, currentBuilding.lng));
     }
     showBuildingDetail(currentBuilding);
     showSheet('center');
@@ -352,13 +481,18 @@ function confirmPickerLocation() {
     document.getElementById('map-picker-crosshair').classList.remove('show');
     document.getElementById('map-picker-confirm').classList.remove('show');
 
-    // Reverse geocode
-    geocoder.coord2Address(center.getLng(), center.getLat(), (result, status) => {
+    // 네이버 Reverse Geocoding 호출
+    naver.maps.Service.reverseGeocode({
+        coords: center,
+    }, function(status, response) {
         let addr = '';
-        if (status === kakao.maps.services.Status.OK) {
-            addr = result[0].address.address_name;
+        if (status === naver.maps.Service.Status.OK) {
+            const items = response.v2.address;
+            // 지번 주소 또는 도로명 주소를 가져옵니다.
+            addr = items.roadAddress || items.jibunAddress || '';
         }
-        openBuildingForm(null, center.getLat(), center.getLng(), addr);
+        // 좌표를 전달할 때 네이버는 .lat() .lng() 함수를 사용합니다.
+        openBuildingForm(null, center.lat(), center.lng(), addr);
     });
 }
 
@@ -411,11 +545,11 @@ function openEditBuilding(id) {
     if (b) openBuildingForm(b, b.lat, b.lng, b.address);
 }
 
-function saveBuilding(id, lat, lng) {
+async function saveBuilding(id, lat, lng) {
     const name = document.getElementById('f-name').value.trim();
     if (!name) { showToast('건물명을 입력하세요'); return; }
 
-    const data = {
+    const dto = {
         name,
         address: document.getElementById('f-addr').value.trim(),
         floors: parseInt(document.getElementById('f-floors').value) || 1,
@@ -424,33 +558,39 @@ function saveBuilding(id, lat, lng) {
         lat: parseFloat(lat), lng: parseFloat(lng)
     };
 
-    if (id) {
-        const idx = state.buildings.findIndex(b => b.id === id);
-        state.buildings[idx] = { ...state.buildings[idx], ...data };
-    } else {
-        state.buildings.push({ id: 'b' + Date.now(), units: [], ...data });
+    try {
+        if (id) {
+            await Api.updateBuilding(id, dto);
+        } else {
+            await Api.createBuilding(dto);
+        }
+        await loadData();
+        closeModal();
+        renderMarkers();
+        updateStats();
+        showBuildingList();
+        showSheet('half');
+        showToast(id ? '건물 정보가 수정되었습니다' : '건물이 추가되었습니다');
+    } catch (e) {
+        showToast('저장 실패: ' + e.message);
     }
-
-    saveData(state);
-    closeModal();
-    renderMarkers();
-    updateStats();
-    showBuildingList();
-    showSheet('half');
-    showToast(id ? '건물 정보가 수정되었습니다' : '건물이 추가되었습니다');
 }
 
-function deleteBuilding(id) {
+async function deleteBuilding(id) {
     if (!confirm('건물과 모든 호실 정보가 삭제됩니다. 계속하시겠습니까?')) return;
-    state.buildings = state.buildings.filter(b => b.id !== id);
-    saveData(state);
-    closeModal();
-    renderMarkers();
-    updateStats();
-    showBuildingList();
-    showSheet('half');
-    currentBuilding = null;
-    showToast('건물이 삭제되었습니다');
+    try {
+        await Api.deleteBuilding(id);
+        await loadData();
+        closeModal();
+        renderMarkers();
+        updateStats();
+        showBuildingList();
+        showSheet('half');
+        currentBuilding = null;
+        showToast('건물이 삭제되었습니다');
+    } catch (e) {
+        showToast('삭제 실패: ' + e.message);
+    }
 }
 
 // =====================================================
@@ -632,12 +772,12 @@ function selectStatus(status) {
     });
 }
 
-function saveUnit(buildingId, unitId) {
+async function saveUnit(buildingId, unitId) {
     const name = document.getElementById('uf-name').value.trim();
     if (!name) { showToast('호실명을 입력하세요'); return; }
 
     const status = document.querySelector('.status-option.selected')?.dataset.status || 'empty';
-    const data = {
+    const dto = {
         name, status,
         floor: parseInt(document.getElementById('uf-floor').value) || 1,
         area: parseFloat(document.getElementById('uf-area').value) || 0,
@@ -651,34 +791,38 @@ function saveUnit(buildingId, unitId) {
         memo: document.getElementById('uf-memo').value.trim()
     };
 
-    const b = state.buildings.find(b => b.id === buildingId);
-    if (unitId) {
-        const idx = b.units.findIndex(u => u.id === unitId);
-        b.units[idx] = { ...b.units[idx], ...data };
-    } else {
-        b.units.push({ id: 'u' + Date.now(), ...data });
+    try {
+        if (unitId) {
+            await Api.updateUnit(unitId, dto);
+        } else {
+            await Api.createUnit(buildingId, dto);
+        }
+        await loadData();
+        const b = state.buildings.find(x => x.id === buildingId);
+        closeModal();
+        renderMarkers();
+        updateStats();
+        if (b) { showBuildingDetail(b); showSheet('center'); currentBuilding = b; }
+        showToast(unitId ? '호실 정보가 수정되었습니다' : '호실이 추가되었습니다');
+    } catch (e) {
+        showToast('저장 실패: ' + e.message);
     }
-
-    saveData(state);
-    closeModal();
-    renderMarkers();
-    updateStats();
-    showBuildingDetail(b);
-    showSheet('center');
-    currentBuilding = b;
-    showToast(unitId ? '호실 정보가 수정되었습니다' : '호실이 추가되었습니다');
 }
 
-function deleteUnit(buildingId, unitId) {
+async function deleteUnit(buildingId, unitId) {
     if (!confirm('이 호실을 삭제하시겠습니까?')) return;
-    const b = state.buildings.find(b => b.id === buildingId);
-    b.units = b.units.filter(u => u.id !== unitId);
-    saveData(state);
-    closeModal();
-    renderMarkers();
-    updateStats();
-    showBuildingDetail(b);
-    showToast('호실이 삭제되었습니다');
+    try {
+        await Api.deleteUnit(unitId);
+        await loadData();
+        const b = state.buildings.find(x => x.id === buildingId);
+        closeModal();
+        renderMarkers();
+        updateStats();
+        if (b) { showBuildingDetail(b); currentBuilding = b; }
+        showToast('호실이 삭제되었습니다');
+    } catch (e) {
+        showToast('삭제 실패: ' + e.message);
+    }
 }
 
 // =====================================================
@@ -780,7 +924,7 @@ function showSettingsView() {
       </div>
 
       <div style="padding:14px;background:#f9fafb;border-radius:12px;font-size:12px;color:#6b7280;">
-        마이빌딩 v1.0 · 데이터는 기기 로컬에 저장됩니다
+        마이빌딩 v1.0 · 데이터는 서버에 저장됩니다
       </div>
     </div>
   `;
@@ -803,23 +947,47 @@ function importData(e) {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = ev => {
+    reader.onload = async ev => {
         try {
             const imported = JSON.parse(ev.target.result);
-            if (imported.buildings) {
-                state = imported;
-                saveData(state);
-                location.reload();
-            } else showToast('올바른 파일 형식이 아닙니다');
-        } catch { showToast('파일을 읽을 수 없습니다'); }
+            if (!imported.buildings) { showToast('올바른 파일 형식이 아닙니다'); return; }
+            // 각 건물을 호실 포함하여 서버에 생성 (BuildingDTO가 중첩 units 지원)
+            for (const b of imported.buildings) {
+                const dto = {
+                    name: b.name, address: b.address, type: b.type,
+                    lat: b.lat, lng: b.lng, floors: b.floors, memo: b.memo,
+                    units: (b.units || []).map(u => ({
+                        floor: u.floor, name: u.name, type: u.type, status: u.status,
+                        area: u.area, tenant: u.tenant, deposit: u.deposit, rent: u.rent,
+                        manage: u.manage, contractStart: u.contractStart,
+                        contractEnd: u.contractEnd, memo: u.memo
+                    }))
+                };
+                await Api.createBuilding(dto);
+            }
+            await loadData();
+            renderMarkers();
+            updateStats();
+            showBuildingList();
+            showToast('데이터를 가져왔습니다');
+        } catch (err) { showToast('가져오기 실패: ' + err.message); }
     };
     reader.readAsText(file);
 }
 
-function resetData() {
-    if (confirm('모든 데이터가 삭제됩니다. 계속하시겠습니까?')) {
-        localStorage.removeItem(DB_KEY);
-        location.reload();
+async function resetData() {
+    if (!confirm('서버의 모든 건물·호실 데이터가 삭제됩니다. 계속하시겠습니까?')) return;
+    try {
+        for (const b of [...state.buildings]) {
+            await Api.deleteBuilding(b.id);
+        }
+        await loadData();
+        renderMarkers();
+        updateStats();
+        showBuildingList();
+        showToast('전체 데이터가 초기화되었습니다');
+    } catch (e) {
+        showToast('초기화 실패: ' + e.message);
     }
 }
 
@@ -926,7 +1094,7 @@ function convertNaverArticle(raw) {
     return { buildingName, address, lat, lng, btype, totalFloors, buildingMemo, unit };
 }
 
-function importNaverJson() {
+async function importNaverJson() {
     const txt = document.getElementById('naver-json').value.trim();
     if (!txt) { showToast('JSON을 붙여넣으세요'); return; }
 
@@ -939,29 +1107,35 @@ function importNaverJson() {
 
     const c = convertNaverArticle(raw);
 
-    // 같은 건물명이 있으면 그 건물에 호실 추가, 없으면 새 건물 생성
-    let b = state.buildings.find(x => x.name === c.buildingName);
-    let isNew = false;
-    if (!b) {
-        isNew = true;
-        b = {
-            id: 'b' + Date.now(),
-            name: c.buildingName, address: c.address, type: c.btype,
-            lat: c.lat, lng: c.lng, floors: c.totalFloors, memo: c.buildingMemo,
-            units: []
-        };
-        state.buildings.push(b);
+    try {
+        // 같은 건물명이 있으면 그 건물에 호실 추가, 없으면 새 건물 생성
+        const existing = state.buildings.find(x => x.name === c.buildingName);
+        const isNew = !existing;
+        let buildingId;
+
+        if (!existing) {
+            const created = await Api.createBuilding({
+                name: c.buildingName, address: c.address, type: c.btype,
+                lat: c.lat, lng: c.lng, floors: c.totalFloors, memo: c.buildingMemo,
+                units: []
+            });
+            buildingId = String(created.id);
+        } else {
+            buildingId = existing.id;
+        }
+
+        await Api.createUnit(buildingId, c.unit);
+        await loadData();
+        closeModal();
+        renderMarkers();
+        updateStats();
+        showToast(isNew ? `'${c.buildingName}' 건물이 추가되었습니다` : `'${c.buildingName}'에 호실이 추가되었습니다`);
+
+        if (typeof map !== 'undefined' && map) switchTab('map');
+        selectBuilding(buildingId);
+    } catch (e) {
+        showToast('가져오기 실패: ' + e.message);
     }
-    b.units.push(c.unit);
-
-    saveData(state);
-    closeModal();
-    renderMarkers();
-    updateStats();
-    showToast(isNew ? `'${c.buildingName}' 건물이 추가되었습니다` : `'${c.buildingName}'에 호실이 추가되었습니다`);
-
-    if (typeof map !== 'undefined' && map) switchTab('map');
-    selectBuilding(b.id);
 }
 
 // =====================================================
@@ -1026,15 +1200,16 @@ searchInput.addEventListener('input', e => {
     </div>
   `).join('');
 
-    // Also search via Kakao
-    if (typeof kakao !== 'undefined' && q.length > 1) {
-        const ps = new kakao.maps.services.Places();
-        ps.keywordSearch(q, (data, status) => {
-            if (status === kakao.maps.services.Status.OK) {
-                html += data.slice(0, 3).map(p => `
-          <div class="search-result-item" onclick="gotoKakaoResult('${p.y}','${p.x}');searchInput.value='${p.place_name}';searchResults.classList.remove('show')">
-            <div>${p.place_name}</div>
-            <div class="search-result-sub">${p.address_name}</div>
+    // Also search via Naver Geocoder (주소 기반 검색)
+    if (typeof naver !== 'undefined' && q.length > 1) {
+        naver.maps.Service.geocode({
+            query: q
+        }, function(status, response) {
+            if (status === naver.maps.Service.Status.OK && response.v2.addresses.length > 0) {
+                html += response.v2.addresses.slice(0, 3).map(p => `
+          <div class="search-result-item" onclick="gotoNaverResult('${p.y}','${p.x}');searchInput.value='${p.roadAddress || p.jibunAddress}';searchResults.classList.remove('show')">
+            <div>${p.roadAddress || p.jibunAddress}</div>
+            <div class="search-result-sub">${p.jibunAddress}</div>
           </div>
         `).join('');
                 searchResults.innerHTML = html;
@@ -1048,9 +1223,10 @@ searchInput.addEventListener('input', e => {
     else searchResults.classList.remove('show');
 });
 
-function gotoKakaoResult(lat, lng) {
-    map.panTo(new kakao.maps.LatLng(lat, lng));
-    map.setLevel(4);
+// 함수 이름과 줌 레벨 로직 네이버로 변경
+function gotoNaverResult(lat, lng) {
+    map.panTo(new naver.maps.LatLng(lat, lng));
+    map.setZoom(16);
 }
 
 document.addEventListener('click', e => {
@@ -1074,21 +1250,22 @@ document.querySelectorAll('.filter-chip').forEach(chip => {
 // =====================================================
 // INIT
 // =====================================================
-// 카카오맵 키가 없거나 로드 실패 시 보여줄 안내 화면
-function showMapFallback() {
+// 네이버 지도 키가 없거나 로드 실패 시 보여줄 안내 화면
+async function showMapFallback() {
+    if (!requireAuthOrRedirect()) return;
     document.getElementById('map').innerHTML = `
     <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;background:#f9fafb;padding:30px;text-align:center;">
       <div style="font-size:48px;margin-bottom:16px;">🗺️</div>
-      <div style="font-size:16px;font-weight:700;color:#374151;margin-bottom:8px;">카카오맵 API 키가 필요합니다</div>
+      <div style="font-size:16px;font-weight:700;color:#374151;margin-bottom:8px;">네이버 지도 API 키가 필요합니다</div>
       <div style="font-size:13px;color:#6b7280;margin-bottom:20px;line-height:1.6;">
-        1. developers.kakao.com 접속<br>
-        2. 앱 생성 → JavaScript 키 복사<br>
-        3. config.js 의 KAKAO_MAP_KEY 값 교체<br>
-        또는 아래 설정에서 입력
+        1. ncloud.com (네이버 클라우드 플랫폼) 접속<br>
+        2. Application 생성 (Maps) → Client ID 복사<br>
+        3. config.js 의 NAVER_MAP_CLIENT_ID 값 교체<br>
       </div>
       <button onclick="switchTab('settings')" style="padding:12px 24px;background:#1a56db;color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;">API 키 설정하기</button>
     </div>
   `;
+    await loadData();
     showBuildingList();
     showSheet('');
     updateStats();
