@@ -2,6 +2,7 @@
 // DATA STORE  (백엔드 API 연동)
 // =====================================================
 // ★ 배포 시 이 값 하나만 변경하면 모든 API 호출 도메인이 바뀝니다.
+<script src="config.js"></script>
 debugger;
 var API_BASE_URL = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_BASE);
 
