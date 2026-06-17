@@ -2,7 +2,7 @@
 // DATA STORE  (백엔드 API 연동)
 // =====================================================
 // ★ 배포 시 이 값 하나만 변경하면 모든 API 호출 도메인이 바뀝니다.
-const API_BASE_URL = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_BASE) || 'http://localhost:8085';
+const API_BASE_URL = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_BASE);
 
 // 공통 fetch 응답 처리
 async function handleResponse(res) {
@@ -92,7 +92,7 @@ function redirectToLogin() {
     sessionStorage.setItem('auth_redirect_count', String(tries + 1));
 
     alert('토큰이 만료되거나 유효하지 않습니다. 다시 로그인해주세요.');
-
+    logout();
     location.href = 'login.html';
 }
 
