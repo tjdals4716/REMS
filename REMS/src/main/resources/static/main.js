@@ -92,8 +92,7 @@ function redirectToLogin() {
     sessionStorage.setItem('auth_redirect_count', String(tries + 1));
 
     alert('토큰이 만료되거나 유효하지 않습니다. 다시 로그인해주세요.');
-    logout();
-    location.href = 'login.html';
+
 }
 
 // 토큰이 유효하지 않으면 로그인 페이지로 보냄. 유효하면 true 반환
