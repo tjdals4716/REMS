@@ -4,11 +4,16 @@ const API_BASE_URL = (window.APP_CONFIG && window.APP_CONFIG.BACKEND_BASE);
 async function handleResponse(res) {
     // 인증 만료/실패 → 로그인 페이지로
     if (res.status === 401 || res.status === 403) {
-        redirectToLogin();
+        redirectToLogin('세션이 만료되었습니다. 다시 로그인해주세요.');
         throw new Error('인증이 만료되었습니다');
     }
     if (!res.ok) {
         const text = await res.text().catch(() => '');
+        // JWT/인증 관련 오류가 500 등으로 와도 로그인 페이지로 유도
+        if (/jwt|token|expired|signature|malformed|unauthor|forbidden|authentication/i.test(text)) {
+            redirectToLogin('세션이 만료되었습니다. 다시 로그인해주세요.');
+            throw new Error('인증이 만료되었습니다');
+        }
         throw new Error(text || (res.status + ' ' + res.statusText));
     }
     if (res.status === 204) return null;
@@ -71,30 +76,19 @@ function authHeaders(withJson) {
     return h;
 }
 
-// 로그인 페이지로 이동 (중복 알림 + 무한 리다이렉트 방지)
+// 로그인 페이지로 이동 (토큰 없음/만료 시)
 let _authRedirecting = false;
-function redirectToLogin() {
-    if (_authRedirecting) return;
+function redirectToLogin(msg) {
+    if (_authRedirecting) return;   // 같은 페이지 안에서 중복 알림 방지
     _authRedirecting = true;
-
-    // login.html이 제대로 열리지 않고 main 페이지가 계속 다시 로드되는 경우
-    // 무한 알림을 막기 위한 안전장치
-    const tries = parseInt(sessionStorage.getItem('auth_redirect_count') || '0', 10);
-    if (tries >= 2) {
-        console.error('[auth] login.html로 이동에 실패했습니다. ' +
-            'login.html이 현재 서버 경로(예: src/main/resources/static/login.html)에 존재하는지 확인하세요.');
-        return; // 더 이상 alert/이동을 반복하지 않음
-    }
-    sessionStorage.setItem('auth_redirect_count', String(tries + 1));
-
-    alert('토큰이 만료되거나 유효하지 않습니다. 다시 로그인해주세요.');
-
+    alert(msg || '토큰이 만료되었거나 존재하지 않습니다. 다시 로그인해주세요.');
+    logout();                       // accessToken 제거 → login.js가 되튕기지 않음 (루프 방지)
+    location.href = 'login.html';
 }
 
 // 토큰이 유효하지 않으면 로그인 페이지로 보냄. 유효하면 true 반환
 function requireAuthOrRedirect() {
     if (!isTokenValid()) { redirectToLogin(); return false; }
-    sessionStorage.removeItem('auth_redirect_count'); // 정상 인증 → 루프 카운터 초기화
     return true;
 }
 
@@ -119,6 +113,9 @@ function logout() {
     localStorage.removeItem('currentUser');
     localStorage.removeItem('auth');
 }
+
+// ★ 메인 페이지 진입 즉시 토큰 확인 — 없거나 만료면 안내 후 login.html로 이동
+requireAuthOrRedirect();
 
 // 백엔드 API 호출 모음 (모든 요청에 uid + JWT 포함)
 const Api = {
@@ -149,7 +146,7 @@ const Api = {
 let state = { buildings: [] };
 
 // 서버에서 전체 건물(+호실)을 불러와 state에 저장
-async function loadData() {
+async function loadData(isInitial) {
     try {
         const buildings = await Api.getBuildings();
         // 백엔드 id(Long) -> 문자열로 정규화 (기존 '=== id' 비교 로직 그대로 동작)
@@ -160,7 +157,13 @@ async function loadData() {
         state.buildings = buildings || [];
     } catch (e) {
         state.buildings = [];
-        if (typeof showToast === 'function') showToast('서버 연결 실패: ' + e.message);
+        if (_authRedirecting) return state;   // 이미 로그인 페이지로 이동 중
+        if (isInitial) {
+            // 메인 진입 시 데이터 로드 실패(서버가 토큰 거부/500/연결 실패) → 로그인으로
+            redirectToLogin('세션이 만료되었거나 서버에 연결할 수 없습니다. 다시 로그인해주세요.');
+        } else if (typeof showToast === 'function') {
+            showToast('서버 연결 실패: ' + e.message);
+        }
     }
     return state;
 }
@@ -201,7 +204,7 @@ async function initMap() {
         }
     });
 
-    await loadData();
+    await loadData(true);
     renderMarkers();
     updateStats();
     showBuildingList();
@@ -378,7 +381,10 @@ function showBuildingList() {
       <div style="flex:1;min-width:0;">
         <div class="building-list-name">${b.name}</div>
         <div class="building-list-addr">${b.address}</div>
-        <div style="margin-top:4px;display:flex;gap:6px;">
+        <div style="margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+          ${isMine(b)
+            ? '<span style="font-size:10.5px;color:#1a56db;background:#e8f0fe;font-weight:700;padding:1px 7px;border-radius:10px;">내 매물</span>'
+            : (b.ownerUid ? `<span style="font-size:10.5px;color:#6b7280;background:#f3f4f6;font-weight:600;padding:1px 7px;border-radius:10px;">🔒 ${b.ownerUid}</span>` : '')}
           ${s.empty > 0 ? `<span style="font-size:11px;color:#dc2626;font-weight:600;">공실 ${s.empty}</span>` : ''}
           ${s.expiring > 0 ? `<span style="font-size:11px;color:#d97706;font-weight:600;">만기 ${s.expiring}</span>` : ''}
         </div>
@@ -392,6 +398,13 @@ function showBuildingList() {
     }).join('');
 }
 
+// 현재 로그인 사용자가 이 오브젝트(건물/호실)의 작성자인지 확인
+function isMine(obj) {
+    if (!obj) return false;
+    const me = getUid();
+    return !!obj.ownerUid && !!me && obj.ownerUid === me;
+}
+
 function showBuildingDetail(b) {
     const s = getUnitStats(b);
     const totalRent = b.units.filter(u => u.status === 'occupied').reduce((sum, u) => sum + (u.rent || 0), 0);
@@ -402,9 +415,13 @@ function showBuildingDetail(b) {
 
     const body = document.getElementById('sheet-body');
     body.innerHTML = `
-    <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;">
+    <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      ${isMine(b) ? `
       <button onclick="openEditBuilding('${b.id}')" style="padding:7px 14px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;font-size:13px;font-weight:600;color:#374151;cursor:pointer;">✏️ 건물 수정</button>
       <button onclick="openAddUnit('${b.id}')" style="padding:7px 14px;border-radius:8px;border:none;background:#1a56db;font-size:13px;font-weight:600;color:#fff;cursor:pointer;">+ 호실 추가</button>
+      ` : `
+      <div style="padding:7px 12px;border-radius:8px;background:#f3f4f6;color:#6b7280;font-size:12.5px;font-weight:600;">🔒 ${b.ownerUid || '다른 사용자'}님의 매물 · 조회 전용</div>
+      `}
       <button onclick="showBuildingList();showSheet('half')" style="padding:7px 14px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;font-size:13px;font-weight:600;color:#6b7280;cursor:pointer;">← 목록</button>
     </div>
 
@@ -560,6 +577,7 @@ function openBuildingForm(building, lat, lng, addr) {
 
 function openEditBuilding(id) {
     const b = state.buildings.find(b => b.id === id);
+    if (!isMine(b)) { showToast('본인이 등록한 매물만 수정할 수 있습니다'); return; }
     if (b) openBuildingForm(b, b.lat, b.lng, b.address);
 }
 
@@ -595,6 +613,8 @@ async function saveBuilding(id, lat, lng) {
 }
 
 async function deleteBuilding(id) {
+    const b = state.buildings.find(b => b.id === id);
+    if (b && !isMine(b)) { showToast('본인이 등록한 매물만 삭제할 수 있습니다'); return; }
     if (!confirm('건물과 모든 호실 정보가 삭제됩니다. 계속하시겠습니까?')) return;
     try {
         await Api.deleteBuilding(id);
@@ -616,6 +636,7 @@ async function deleteBuilding(id) {
 // =====================================================
 function openAddUnit(buildingId) {
     const b = state.buildings.find(b => b.id === buildingId);
+    if (!isMine(b)) { showToast('본인이 등록한 매물에만 호실을 추가할 수 있습니다'); return; }
     openUnitForm(buildingId, null);
 }
 
@@ -639,7 +660,9 @@ function openUnitDetail(buildingId, unitId) {
 
     document.getElementById('modal-footer').innerHTML = `
     <button class="btn-secondary" onclick="closeModal()">닫기</button>
-    <button class="btn-primary" onclick="openUnitForm('${buildingId}','${unitId}')">수정</button>
+    ${isMine(u)
+        ? `<button class="btn-primary" onclick="openUnitForm('${buildingId}','${unitId}')">수정</button>`
+        : `<span style="font-size:12.5px;color:#9ca3af;align-self:center;padding:0 6px;">🔒 ${u.ownerUid || '다른 사용자'}님이 등록한 호실</span>`}
   `;
     showModal();
 }
@@ -702,6 +725,8 @@ function renderUnitTab(tab) {
 function openUnitForm(buildingId, unitId) {
     const b = state.buildings.find(b => b.id === buildingId);
     const u = unitId ? b.units.find(u => u.id === unitId) : null;
+    if (unitId && !isMine(u)) { showToast('본인이 등록한 호실만 수정할 수 있습니다'); return; }
+    if (!unitId && !isMine(b)) { showToast('본인이 등록한 매물에만 호실을 추가할 수 있습니다'); return; }
     const isEdit = !!u;
 
     document.getElementById('modal-title').textContent = isEdit ? '호실 수정' : '호실 추가';
@@ -828,6 +853,9 @@ async function saveUnit(buildingId, unitId) {
 }
 
 async function deleteUnit(buildingId, unitId) {
+    const b = state.buildings.find(b => b.id === buildingId);
+    const u = b && b.units.find(u => u.id === unitId);
+    if (u && !isMine(u)) { showToast('본인이 등록한 호실만 삭제할 수 있습니다'); return; }
     if (!confirm('이 호실을 삭제하시겠습니까?')) return;
     try {
         await Api.deleteUnit(unitId);
@@ -1285,7 +1313,7 @@ async function showMapFallback() {
       <button onclick="switchTab('settings')" style="padding:12px 24px;background:#1a56db;color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;">API 키 설정하기</button>
     </div>
   `;
-    await loadData();
+    await loadData(true);
     showBuildingList();
     showSheet('');
     updateStats();

@@ -37,8 +37,8 @@ function startSocialLogin(provider) {
         showToast(`${labelOf(provider)} 클라이언트가 설정되지 않았습니다.`);
         return;
     }
-
-    const redirectUri = "https://rems-nu.vercel.app/oauth-redirect.html";
+    debugger;
+    const redirectUri = CFG.FRONT_LOGIN_BASE;
 
     // provider 식별을 위해 state 에 담아 보냄 (콜백이 다른 출처여도 읽힘)
     const state = provider + '__' + randomState();
