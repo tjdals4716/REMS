@@ -26,23 +26,28 @@ public class UnitService {
     private final BuildingRepository buildingRepository;
     private final UserRepository userRepository;
 
-    // 토큰 검증(토큰의 사용자 == 요청 uid) 후 해당 UserEntity 반환
-    private UserEntity getAuthorizedUser(String uid, UserDetails userDetails) {
+    // 로그인 여부만 검증 (조회는 모든 로그인 사용자에게 공개)
+    private void checkAuth(String uid, UserDetails userDetails) {
         if (userDetails == null || !userDetails.getUsername().equals(uid)) {
             throw new RuntimeException("권한이 없습니다");
         }
+    }
+
+    // 토큰 검증 후 UserEntity 반환 (생성 시 작성자 지정에 사용)
+    private UserEntity getAuthorizedUser(String uid, UserDetails userDetails) {
+        checkAuth(uid, userDetails);
         return userRepository.findByUid(uid)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다"));
     }
 
-    // 호실 작성자(owner)가 요청자(uid)인지 확인
+    // 호실 수정/삭제 권한: 작성자 본인만
     private void checkUnitOwner(UnitEntity unit, String uid) {
         if (unit.getOwner() == null || !unit.getOwner().getUid().equals(uid)) {
             throw new RuntimeException("해당 호실에 대한 권한이 없습니다");
         }
     }
 
-    // 건물 소유자가 요청자(uid)인지 확인
+    // 호실 추가 권한: 건물 작성자 본인만
     private void checkBuildingOwner(BuildingEntity building, String uid) {
         if (building == null || building.getOwner() == null
                 || !building.getOwner().getUid().equals(uid)) {
@@ -50,7 +55,7 @@ public class UnitService {
         }
     }
 
-    // 특정 건물에 호실 추가 (작성자 = 토큰의 사용자, 내 건물일 때만)
+    // 특정 건물에 호실 추가 (작성자 = 토큰의 사용자, 내 건물에만)
     @Transactional
     public UnitDTO createUnit(String uid, Long buildingId, UnitDTO unitDTO, UserDetails userDetails) {
         UserEntity owner = getAuthorizedUser(uid, userDetails);
@@ -65,13 +70,12 @@ public class UnitService {
         return UnitDTO.entityToDto(savedUnit);
     }
 
-    // 특정 건물의 호실 전체 조회 (내 건물일 때만)
+    // 특정 건물의 호실 전체 조회 — 모든 로그인 사용자 공개
     @Transactional(readOnly = true)
     public List<UnitDTO> getUnitsByBuilding(String uid, Long buildingId, UserDetails userDetails) {
-        getAuthorizedUser(uid, userDetails);
-        BuildingEntity building = buildingRepository.findById(buildingId)
-                .orElseThrow(() -> new IllegalArgumentException("건물을 찾을 수 없습니다"));
-        checkBuildingOwner(building, uid);
+        checkAuth(uid, userDetails);
+        buildingRepository.findById(buildingId)
+                .orElseThrow(() -> new IllegalArgumentException("건물을 찾을 수 없습니다")); // 존재 확인
         List<UnitDTO> units = unitRepository.findByBuildingId(buildingId).stream()
                 .map(UnitDTO::entityToDto)
                 .collect(Collectors.toList());
@@ -79,21 +83,20 @@ public class UnitService {
         return units;
     }
 
-    // id로 호실 단건 조회 (내가 작성한 호실일 때만)
+    // id로 호실 단건 조회 — 공개
     @Transactional(readOnly = true)
     public UnitDTO findById(String uid, Long id, UserDetails userDetails) {
-        getAuthorizedUser(uid, userDetails);
+        checkAuth(uid, userDetails);
         UnitEntity unitEntity = unitRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("호실을 찾을 수 없습니다"));
-        checkUnitOwner(unitEntity, uid);
         logger.info("{}번 호실 조회 완료! 요청자: {}", id, uid);
         return UnitDTO.entityToDto(unitEntity);
     }
 
-    // 호실 수정 (내가 작성한 호실일 때만)
+    // 호실 수정 — 작성자 본인만
     @Transactional
     public UnitDTO updateUnit(String uid, Long id, UnitDTO unitDTO, UserDetails userDetails) {
-        getAuthorizedUser(uid, userDetails);
+        checkAuth(uid, userDetails);
         UnitEntity unitEntity = unitRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("호실을 찾을 수 없습니다"));
         checkUnitOwner(unitEntity, uid);
@@ -109,14 +112,14 @@ public class UnitService {
         unitEntity.setContractStart(unitDTO.getContractStart());
         unitEntity.setContractEnd(unitDTO.getContractEnd());
         unitEntity.setMemo(unitDTO.getMemo());
-        logger.info("{}번 호실 수정 완료! 요청자: {}", id, uid);
+        logger.info("{}번 호실 수정 완료! 작성자: {}", id, uid);
         return UnitDTO.entityToDto(unitEntity);
     }
 
-    // 호실 삭제 (내가 작성한 호실일 때만)
+    // 호실 삭제 — 작성자 본인만
     @Transactional
     public UnitDTO deleteUnit(String uid, Long id, UserDetails userDetails) {
-        getAuthorizedUser(uid, userDetails);
+        checkAuth(uid, userDetails);
         UnitEntity unitEntity = unitRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("호실을 찾을 수 없습니다"));
         checkUnitOwner(unitEntity, uid);
@@ -128,7 +131,7 @@ public class UnitService {
             building.getUnits().remove(unitEntity);
         }
         unitRepository.delete(unitEntity);
-        logger.info("{}번 호실 삭제 완료! 요청자: {}", id, uid);
+        logger.info("{}번 호실 삭제 완료! 작성자: {}", id, uid);
         return deleted;
     }
 }
