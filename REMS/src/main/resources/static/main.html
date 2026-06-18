@@ -166,7 +166,7 @@
     (function () {
         debugger;
         // config.js에서 네이버 맵 키를 가져옵니다.
-        var key = (window.APP_CONFIG && window.APP_CONFIG.NAVER_MAP_CLIENT_ID) || '';
+        const key = (window.APP_CONFIG && window.APP_CONFIG.NAVER_MAP_CLIENT_ID);
         if (!key || key === 'YOUR_NAVER_MAP_CLIENT_ID') {
             if (typeof showMapFallback === 'function') showMapFallback();
             return;
