@@ -126,10 +126,11 @@ const Api = {
         fetch(`${API_BASE_URL}/building/id/${getUid()}/${id}`, { headers: authHeaders() }).then(handleResponse),
     createBuilding: (dto, mediaFile) => {
         const fd = new FormData();
+        fd.append('uid', getUid());                       // @RequestPart("uid") String
         fd.append('buildingData', JSON.stringify(dto));   // @RequestPart("buildingData") String
         if (mediaFile) fd.append('mediaData', mediaFile);  // @RequestPart("mediaData") MultipartFile (선택)
         // FormData 전송 시 Content-Type은 브라우저가 boundary와 함께 자동 설정 → authHeaders()만 사용
-        return fetch(`${API_BASE_URL}/building/${getUid()}`, { method: 'POST', headers: authHeaders(), body: fd }).then(handleResponse);
+        return fetch(`${API_BASE_URL}/building`, { method: 'POST', headers: authHeaders(), body: fd }).then(handleResponse);
     },
     updateBuilding: (id, dto) =>
         fetch(`${API_BASE_URL}/building/${getUid()}/${id}`, { method: 'PUT', headers: authHeaders(true), body: JSON.stringify(dto) }).then(handleResponse),

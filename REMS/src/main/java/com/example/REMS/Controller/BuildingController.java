@@ -22,11 +22,11 @@ public class BuildingController {
 
     private final BuildingService buildingService;
 
-    // 건물 추가 (multipart: buildingData(JSON 문자열) + mediaData(파일, 선택))
+    // 건물 추가 (Post 패턴: uid/buildingData/mediaData 를 multipart 파트로 받음)
     @SneakyThrows
     @Operation(summary = "건물 추가")
-    @PostMapping(value = "/{uid}", consumes = {MediaType.MULTIPART_FORM_DATA_VALUE})
-    public ResponseEntity<BuildingDTO> createBuilding(@PathVariable("uid") String uid,
+    @PostMapping(consumes = {MediaType.APPLICATION_JSON_VALUE, MediaType.MULTIPART_FORM_DATA_VALUE})
+    public ResponseEntity<BuildingDTO> createBuilding(@RequestPart("uid") String uid,
                                                       @RequestPart("buildingData") String buildingData,
                                                       @RequestPart(value = "mediaData", required = false) MultipartFile mediaData,
                                                       @AuthenticationPrincipal UserDetails userDetails) {
