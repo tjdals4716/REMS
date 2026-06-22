@@ -9,6 +9,8 @@ google:
   cloud:
     credentials:
       header: ${GOOGLE_CLOUD_URL}
+    storage:
+      bucket: ${GOOGLE_CLOUD_NAME}
 
 spring:
   profiles:

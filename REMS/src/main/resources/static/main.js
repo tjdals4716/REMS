@@ -124,8 +124,13 @@ const Api = {
         fetch(`${API_BASE_URL}/building/all/${getUid()}`, { headers: authHeaders() }).then(handleResponse),
     getBuilding: (id) =>
         fetch(`${API_BASE_URL}/building/id/${getUid()}/${id}`, { headers: authHeaders() }).then(handleResponse),
-    createBuilding: (dto) =>
-        fetch(`${API_BASE_URL}/building/${getUid()}`, { method: 'POST', headers: authHeaders(true), body: JSON.stringify(dto) }).then(handleResponse),
+    createBuilding: (dto, mediaFile) => {
+        const fd = new FormData();
+        fd.append('buildingData', JSON.stringify(dto));   // @RequestPart("buildingData") String
+        if (mediaFile) fd.append('mediaData', mediaFile);  // @RequestPart("mediaData") MultipartFile (선택)
+        // FormData 전송 시 Content-Type은 브라우저가 boundary와 함께 자동 설정 → authHeaders()만 사용
+        return fetch(`${API_BASE_URL}/building/${getUid()}`, { method: 'POST', headers: authHeaders(), body: fd }).then(handleResponse);
+    },
     updateBuilding: (id, dto) =>
         fetch(`${API_BASE_URL}/building/${getUid()}/${id}`, { method: 'PUT', headers: authHeaders(true), body: JSON.stringify(dto) }).then(handleResponse),
     deleteBuilding: (id) =>
@@ -415,6 +420,7 @@ function showBuildingDetail(b) {
 
     const body = document.getElementById('sheet-body');
     body.innerHTML = `
+    ${b.mediaURL ? `<img src="${b.mediaURL}" alt="${b.name}" style="width:100%;max-height:200px;object-fit:cover;border-radius:12px;margin-bottom:12px;" onerror="this.style.display='none'">` : ''}
     <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       ${isMine(b) ? `
       <button onclick="openEditBuilding('${b.id}')" style="padding:7px 14px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;font-size:13px;font-weight:600;color:#374151;cursor:pointer;">✏️ 건물 수정</button>
@@ -481,6 +487,9 @@ function startAddBuilding() {
     document.getElementById('map-picker-bar').classList.add('show');
     document.getElementById('map-picker-crosshair').classList.add('show');
     document.getElementById('map-picker-confirm').classList.add('show');
+    document.getElementById('map-picker-search').classList.add('show');
+    document.getElementById('picker-search-input').value = '';
+    document.getElementById('picker-search-results').classList.remove('show');
     const addBtn = document.getElementById('add-btn-float');
     addBtn.classList.add('picking');      // + → × (취소 아이콘)
     addBtn.title = '위치 설정 취소';
@@ -500,6 +509,8 @@ function cancelMapPicker() {
     document.getElementById('map-picker-bar').classList.remove('show');
     document.getElementById('map-picker-crosshair').classList.remove('show');
     document.getElementById('map-picker-confirm').classList.remove('show');
+    document.getElementById('map-picker-search').classList.remove('show');
+    document.getElementById('picker-search-results').classList.remove('show');
     const addBtn = document.getElementById('add-btn-float');
     addBtn.classList.remove('picking');
     addBtn.title = '건물 추가';
@@ -512,6 +523,8 @@ function confirmPickerLocation() {
     document.getElementById('map-picker-bar').classList.remove('show');
     document.getElementById('map-picker-crosshair').classList.remove('show');
     document.getElementById('map-picker-confirm').classList.remove('show');
+    document.getElementById('map-picker-search').classList.remove('show');
+    document.getElementById('picker-search-results').classList.remove('show');
     const addBtn = document.getElementById('add-btn-float');
     addBtn.classList.remove('picking');
     addBtn.title = '건물 추가';
@@ -564,6 +577,11 @@ function openBuildingForm(building, lat, lng, addr) {
       <label class="form-label">메모</label>
       <textarea id="f-memo" class="form-textarea" placeholder="특이사항, 관리 메모 등">${building ? building.memo : ''}</textarea>
     </div>
+    ${!isEdit ? `
+    <div class="form-group">
+      <label class="form-label">사진/미디어 (선택)</label>
+      <input id="f-media" class="form-input" type="file" accept="image/*,video/*">
+    </div>` : ''}
   `;
 
     document.getElementById('modal-footer').innerHTML = `
@@ -598,7 +616,9 @@ async function saveBuilding(id, lat, lng) {
         if (id) {
             await Api.updateBuilding(id, dto);
         } else {
-            await Api.createBuilding(dto);
+            const mediaInput = document.getElementById('f-media');
+            const mediaFile = (mediaInput && mediaInput.files && mediaInput.files[0]) ? mediaInput.files[0] : null;
+            await Api.createBuilding(dto, mediaFile);
         }
         await loadData();
         closeModal();
@@ -1275,6 +1295,65 @@ searchInput.addEventListener('input', e => {
 function gotoNaverResult(lat, lng) {
     map.panTo(new naver.maps.LatLng(lat, lng));
     map.setZoom(16);
+}
+
+// =====================================================
+// 위치 설정(피커) 모드 — 주소 검색으로 지도 이동
+// 지도 중심(크로스헤어)이 곧 설정 위치이므로, 검색 위치로 중심을 옮긴다
+// =====================================================
+const pickerSearchInput = document.getElementById('picker-search-input');
+const pickerSearchResults = document.getElementById('picker-search-results');
+
+// 검색 결과 위치로 지도 중심 이동 → 그 지점이 건물 위치로 설정됨
+function gotoPickerResult(lat, lng) {
+    const latlng = new naver.maps.LatLng(lat, lng);
+    map.setCenter(latlng);
+    map.setZoom(17);
+    pickerLatlng = latlng;
+    pickerSearchResults.classList.remove('show');
+}
+
+if (pickerSearchInput) {
+    // 입력 시 주소 후보 표시
+    pickerSearchInput.addEventListener('input', e => {
+        const q = e.target.value.trim();
+        if (!q || q.length < 2 || typeof naver === 'undefined') {
+            pickerSearchResults.classList.remove('show');
+            return;
+        }
+        naver.maps.Service.geocode({ query: q }, function (status, response) {
+            if (status === naver.maps.Service.Status.OK && response.v2.addresses.length > 0) {
+                pickerSearchResults.innerHTML = response.v2.addresses.slice(0, 5).map(p => {
+                    const label = (p.roadAddress || p.jibunAddress || '').replace(/'/g, '');
+                    return `<div class="search-result-item" onclick="gotoPickerResult('${p.y}','${p.x}');document.getElementById('picker-search-input').value='${label}';">
+                        <div>${p.roadAddress || p.jibunAddress}</div>
+                        <div class="search-result-sub">${p.jibunAddress || ''}</div>
+                    </div>`;
+                }).join('');
+                pickerSearchResults.classList.add('show');
+            } else {
+                pickerSearchResults.innerHTML = '';
+                pickerSearchResults.classList.remove('show');
+            }
+        });
+    });
+
+    // Enter → 첫 번째 결과 위치로 바로 이동
+    pickerSearchInput.addEventListener('keydown', e => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        const q = pickerSearchInput.value.trim();
+        if (!q || typeof naver === 'undefined') return;
+        naver.maps.Service.geocode({ query: q }, function (status, response) {
+            if (status === naver.maps.Service.Status.OK && response.v2.addresses.length > 0) {
+                const p = response.v2.addresses[0];
+                gotoPickerResult(p.y, p.x);
+                pickerSearchInput.value = p.roadAddress || p.jibunAddress || q;
+            } else {
+                showToast('주소를 찾을 수 없습니다');
+            }
+        });
+    });
 }
 
 document.addEventListener('click', e => {

@@ -2,12 +2,16 @@ package com.example.REMS.Controller;
 
 import com.example.REMS.DTO.BuildingDTO;
 import com.example.REMS.Service.BuildingService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
+import lombok.SneakyThrows;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -18,13 +22,17 @@ public class BuildingController {
 
     private final BuildingService buildingService;
 
-    // 건물 추가
+    // 건물 추가 (multipart: buildingData(JSON 문자열) + mediaData(파일, 선택))
+    @SneakyThrows
     @Operation(summary = "건물 추가")
-    @PostMapping("/{uid}")
+    @PostMapping(value = "/{uid}", consumes = {MediaType.MULTIPART_FORM_DATA_VALUE})
     public ResponseEntity<BuildingDTO> createBuilding(@PathVariable("uid") String uid,
-                                                      @RequestBody BuildingDTO buildingDTO,
+                                                      @RequestPart("buildingData") String buildingData,
+                                                      @RequestPart(value = "mediaData", required = false) MultipartFile mediaData,
                                                       @AuthenticationPrincipal UserDetails userDetails) {
-        return ResponseEntity.ok(buildingService.createBuilding(uid, buildingDTO, userDetails));
+        ObjectMapper mapper = new ObjectMapper();
+        BuildingDTO buildingDTO = mapper.readValue(buildingData, BuildingDTO.class);
+        return ResponseEntity.ok(buildingService.createBuilding(uid, buildingDTO, mediaData, userDetails));
     }
 
     // 전체 건물 조회

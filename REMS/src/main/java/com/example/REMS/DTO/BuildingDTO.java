@@ -22,6 +22,7 @@ public class BuildingDTO {
     private int floors;
     private String memo;
     private String ownerUid;    // 작성자 uid (응답 표시용, 읽기 전용)
+    private String mediaURL;    // 대표 이미지/미디어 URL
 
     // 프론트 오브젝트처럼 호실 목록을 중첩해서 담는다
     @Builder.Default
@@ -43,6 +44,7 @@ public class BuildingDTO {
                 buildingEntity.getFloors(),
                 buildingEntity.getMemo(),
                 ownerUid,
+                buildingEntity.getMediaURL(),
                 unitDTOs);
     }
 
@@ -57,6 +59,7 @@ public class BuildingDTO {
                 .lng(lng)
                 .floors(floors)
                 .memo(memo)
+                .mediaURL(mediaURL)
                 .owner(owner)
                 .units(new ArrayList<>())
                 .build();

@@ -416,6 +416,27 @@ html, body { height: 100%; overflow: hidden; font-family: var(--font); backgroun
     font-size: 14px; font-weight: 600;
 }
 #map-picker-bar.show { display: block; }
+
+/* 위치 설정 모드 — 주소 검색창 */
+#map-picker-search {
+    display: none; position: absolute; top: 56px; left: 12px; right: 12px; z-index: 151;
+}
+#map-picker-search.show { display: block; }
+#picker-search-input {
+    width: 100%; padding: 12px 14px;
+    border: none; border-radius: var(--radius-md);
+    background: var(--white); box-shadow: var(--shadow-md);
+    font-size: 14px; color: var(--gray-800); font-family: var(--font); outline: none;
+}
+#picker-search-input:focus { box-shadow: 0 0 0 3px rgba(26,86,219,0.18), var(--shadow-md); }
+#picker-search-input::placeholder { color: var(--gray-400); }
+#picker-search-results {
+    position: absolute; top: 100%; left: 0; right: 0; z-index: 152;
+    background: var(--white); border-radius: var(--radius-md);
+    border: 1px solid var(--gray-200); box-shadow: var(--shadow-md);
+    margin-top: 6px; overflow: hidden auto; display: none; max-height: 240px;
+}
+#picker-search-results.show { display: block; }
 #map-picker-crosshair {
     display: none; position: absolute; top: 50%; left: 50%; z-index: 140;
     transform: translate(-50%, -50%) translateY(-16px);

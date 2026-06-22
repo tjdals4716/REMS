@@ -27,6 +27,8 @@ public class BuildingEntity {
     @Column(length = 1000)
     private String memo;        // 메모
 
+    private String mediaURL;    // 대표 이미지/미디어 URL (GCS 업로드 결과)
+
     // 작성자(소유자) — users 테이블과 N:1 외래키 (owner_id)
     // UserEntity에는 password 등이 있으므로 직렬화 방지를 위해 @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
