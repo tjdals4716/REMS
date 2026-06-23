@@ -20,11 +20,13 @@ public class BuildingDTO {
     private String type;            // house/multiplex/officetel/commercial
     private double lat;
     private double lng;
+    private int deposit;            // 보증금 (만원)
+    private int rent;               // 월세 (만원)
+    private int manage;             // 관리비 (만원)
     private String memo;
     private String ownerUid;        // 작성자 uid (응답 표시용, 읽기 전용)
     private String mediaURL;        // 대표 이미지/미디어 URL
 
-    // 프론트 오브젝트처럼 호실 목록을 중첩해서 담는다
     @Builder.Default
     private List<UnitDTO> units = new ArrayList<>();
 
@@ -42,13 +44,15 @@ public class BuildingDTO {
                 buildingEntity.getType(),
                 buildingEntity.getLat(),
                 buildingEntity.getLng(),
+                buildingEntity.getDeposit(),
+                buildingEntity.getRent(),
+                buildingEntity.getManage(),
                 buildingEntity.getMemo(),
                 ownerUid,
                 buildingEntity.getMediaURL(),
                 unitDTOs);
     }
 
-    // 소유자(owner)를 지정하여 엔티티로 변환
     public BuildingEntity dtoToEntity(UserEntity owner) {
         BuildingEntity buildingEntity = BuildingEntity.builder()
                 .id(id)
@@ -58,13 +62,15 @@ public class BuildingDTO {
                 .type(type)
                 .lat(lat)
                 .lng(lng)
+                .deposit(deposit)
+                .rent(rent)
+                .manage(manage)
                 .memo(memo)
                 .mediaURL(mediaURL)
                 .owner(owner)
                 .units(new ArrayList<>())
                 .build();
 
-        // 중첩된 호실들을 양방향 연관관계로 연결 (작성자는 건물 소유자와 동일하게)
         if (units != null) {
             for (UnitDTO unitDTO : units) {
                 buildingEntity.addUnit(unitDTO.dtoToEntity(owner));

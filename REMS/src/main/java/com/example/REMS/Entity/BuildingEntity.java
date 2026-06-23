@@ -24,13 +24,17 @@ public class BuildingEntity {
     private double lat;             // 위도
     private double lng;             // 경도
 
+    // 금액 (만원 단위)
+    private int deposit;            // 보증금
+    private int rent;               // 월세
+    private int manage;             // 관리비
+
     @Column(length = 1000)
-    private String memo;            // 메모
+    private String memo;            // 메모 (UI에서는 숨김, 데이터는 보존)
 
     private String mediaURL;        // 대표 이미지/미디어 URL (GCS 업로드 결과)
 
     // 작성자(소유자) — users 테이블과 N:1 외래키 (owner_id)
-    // UserEntity에는 password 등이 있으므로 직렬화 방지를 위해 @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "owner_id")
     @JsonIgnore
@@ -42,7 +46,6 @@ public class BuildingEntity {
     @JsonManagedReference
     private List<UnitEntity> units = new ArrayList<>();
 
-    // 호실 추가 시 양방향 연관관계 편의 메서드
     public void addUnit(UnitEntity unit) {
         units.add(unit);
         unit.setBuilding(this);

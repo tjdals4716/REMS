@@ -154,6 +154,9 @@ public class BuildingService {
         buildingEntity.setType(buildingDTO.getType());
         buildingEntity.setLat(buildingDTO.getLat());
         buildingEntity.setLng(buildingDTO.getLng());
+        buildingEntity.setDeposit(buildingDTO.getDeposit());
+        buildingEntity.setRent(buildingDTO.getRent());
+        buildingEntity.setManage(buildingDTO.getManage());
         buildingEntity.setMemo(buildingDTO.getMemo());
 
         // 새 미디어 파일이 있으면 교체, 없으면 기존 이미지 유지

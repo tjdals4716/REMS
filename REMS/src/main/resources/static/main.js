@@ -428,7 +428,6 @@ function showBuildingDetail(b) {
     const body = document.getElementById('sheet-body');
     body.innerHTML = `
     ${b.mediaURL ? `<img src="${b.mediaURL}" alt="${b.name}" class="building-photo" onclick="openImageViewer('${b.mediaURL}')" onerror="this.style.display='none'">` : ''}
-    <div style="margin-bottom:10px;"><span style="display:inline-block;font-size:12px;font-weight:600;color:#1a56db;background:#e8f0fe;padding:3px 10px;border-radius:10px;">${TYPE_EMOJI[b.type] || '🏢'} ${TYPE_LABEL[b.type] || b.type || '유형 미지정'}</span></div>
     <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       ${isMine(b) ? `
       <button onclick="openEditBuilding('${b.id}')" style="padding:7px 14px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;font-size:13px;font-weight:600;color:#374151;cursor:pointer;">✏️ 건물 수정</button>
@@ -439,26 +438,28 @@ function showBuildingDetail(b) {
       <button onclick="showBuildingList();showSheet('center')" style="padding:7px 14px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;font-size:13px;font-weight:600;color:#6b7280;cursor:pointer;">← 목록</button>
     </div>
 
-    <div class="building-info-grid">
-      <div class="info-card">
-        <div class="info-card-label">총 호실</div>
-        <div class="info-card-value">${s.total}호</div>
-      </div>
-      <div class="info-card">
-        <div class="info-card-label">공실</div>
-        <div class="info-card-value" style="color:#dc2626;">${s.empty}호</div>
-      </div>
-      <div class="info-card">
-        <div class="info-card-label">월 수입</div>
-        <div class="info-card-value">${totalRent.toLocaleString()}만원</div>
-      </div>
-      <div class="info-card">
-        <div class="info-card-label">보증금 합계</div>
-        <div class="info-card-value">${totalDeposit.toLocaleString()}만원</div>
-      </div>
+    <!-- 주소 + 상세주소 (바로 옆에) -->
+    <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:12px;padding:10px 12px;background:#f9fafb;border-radius:10px;">
+      <span style="font-size:12px;font-weight:700;color:#6b7280;flex-shrink:0;">주소</span>
+      <span style="font-size:14px;font-weight:600;color:#111827;">${b.address || '-'}</span>
+      ${b.detailAddress ? `<span style="font-size:13px;color:#6b7280;">${b.detailAddress}</span>` : ''}
     </div>
 
-    ${b.memo ? `<div style="padding:10px 12px;background:#f9fafb;border-radius:10px;font-size:13px;color:#6b7280;margin-bottom:12px;">📝 ${b.memo}</div>` : ''}
+    <!-- 금액: 보증금 / 월세 / 관리비 -->
+    <div class="building-info-grid" style="grid-template-columns:repeat(3,1fr);">
+      <div class="info-card">
+        <div class="info-card-label">보증금</div>
+        <div class="info-card-value">${(b.deposit || 0).toLocaleString()}만원</div>
+      </div>
+      <div class="info-card">
+        <div class="info-card-label">월세</div>
+        <div class="info-card-value">${(b.rent || 0).toLocaleString()}만원</div>
+      </div>
+      <div class="info-card">
+        <div class="info-card-label">관리비</div>
+        <div class="info-card-value">${(b.manage || 0).toLocaleString()}만원</div>
+      </div>
+    </div>
 
     <div style="font-size:13px;font-weight:700;color:#374151;margin-bottom:8px;">호실 현황</div>
     <div class="unit-list">
@@ -580,8 +581,18 @@ function openBuildingForm(building, lat, lng, addr) {
       </select>
     </div>
     <div class="form-group">
-      <label class="form-label">메모</label>
-      <textarea id="f-memo" class="form-textarea" placeholder="특이사항, 관리 메모 등">${building ? (building.memo || '') : ''}</textarea>
+      <label class="form-label">보증금 (만원)</label>
+      <input id="f-deposit" class="form-input" type="number" min="0" placeholder="예: 1000" value="${building ? (building.deposit || '') : ''}">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">월세 (만원)</label>
+        <input id="f-rent" class="form-input" type="number" min="0" placeholder="예: 50" value="${building ? (building.rent || '') : ''}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">관리비 (만원)</label>
+        <input id="f-manage" class="form-input" type="number" min="0" placeholder="예: 5" value="${building ? (building.manage || '') : ''}">
+      </div>
     </div>
     ${(building && building.mediaURL) ? `
     <div class="form-group">
@@ -618,7 +629,9 @@ async function saveBuilding(id, lat, lng) {
         address: document.getElementById('f-addr').value.trim(),
         detailAddress: document.getElementById('f-detail').value.trim(),
         type: document.getElementById('f-type').value,
-        memo: document.getElementById('f-memo').value.trim(),
+        deposit: parseInt(document.getElementById('f-deposit').value) || 0,
+        rent: parseInt(document.getElementById('f-rent').value) || 0,
+        manage: parseInt(document.getElementById('f-manage').value) || 0,
         lat: parseFloat(lat), lng: parseFloat(lng)
     };
 
