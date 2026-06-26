@@ -566,12 +566,14 @@ html, body { height: 100%; overflow: hidden; font-family: var(--font); backgroun
     -webkit-overflow-scrolling: touch;
     border-radius: 12px;
     scrollbar-width: none;          /* Firefox: 스크롤바 숨김 */
+    height: 240px;                  /* 첫 이미지 로드 후 JS가 비율에 맞게 재설정 */
+    background: var(--gray-100);    /* contain 여백(레터박스) 배경 */
 }
 .gal-track::-webkit-scrollbar { display: none; }   /* Chrome/Safari: 스크롤바 숨김 */
 .gal-slide { flex: 0 0 100%; scroll-snap-align: center; }
 .gal-slide img {
-    width: 100%; height: 200px; object-fit: cover; display: block;
-    border-radius: 12px; cursor: pointer; background: var(--gray-100);
+    width: 100%; height: 100%; object-fit: contain; display: block;  /* 잘림 없이 전체 표시 */
+    cursor: pointer;
 }
 .gal-counter {
     position: absolute; top: 8px; right: 8px;

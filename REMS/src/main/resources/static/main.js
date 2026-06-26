@@ -565,9 +565,11 @@ function renderGallery(b) {
     const gid = 'gal-' + (b && b.id ? b.id : Math.random().toString(36).slice(2));
     const safeName = (b && b.name ? b.name : '').replace(/"/g, '&quot;');
 
-    const slides = arr.map(u => `
+    const slides = arr.map((u, i) => `
       <div class="gal-slide">
-        <img src="${u}" alt="${safeName}" onclick="openImageViewer('${u}')" onerror="this.parentElement.style.display='none'">
+        <img src="${u}" alt="${safeName}"
+             ${i === 0 ? `onload="fitGalleryHeight('${gid}', this)"` : ''}
+             onclick="openImageViewer('${u}')" onerror="this.parentElement.style.display='none'">
       </div>`).join('');
 
     // 이미지가 2장 이상일 때만 카운터/점 표시
@@ -592,6 +594,18 @@ function onGalleryScroll(gid, total) {
     if (cnt) cnt.textContent = (idx + 1) + ' / ' + total;
     const dots = document.getElementById(gid + '-dots');
     if (dots) Array.from(dots.children).forEach((d, i) => d.classList.toggle('active', i === idx));
+}
+
+// 첫 이미지 비율에 맞춰 캐러셀 높이를 설정 → 첫 장은 딱 맞고 나머지는 그 안에 전체가 보임(contain)
+function fitGalleryHeight(gid, img) {
+    const track = document.getElementById(gid);
+    if (!track || !img || !img.naturalWidth) return;
+    const w = track.clientWidth || track.offsetWidth;
+    if (!w) return;
+    let h = w * img.naturalHeight / img.naturalWidth;
+    const maxH = Math.round(window.innerHeight * 0.7);   // 세로 사진이 화면을 다 먹지 않도록 상한
+    if (h > maxH) h = maxH;
+    track.style.height = Math.round(h) + 'px';
 }
 
 // 폼: 유지 중인 기존 이미지 썸네일 (X로 제거)
