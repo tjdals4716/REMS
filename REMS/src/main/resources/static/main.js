@@ -1693,6 +1693,11 @@ async function saveProfileEdit() {
         showToast('저장 중…');
         const updated = await Api.updateUser(dto);   // 파일 없이 JSON 부분 업데이트
         const merged = Object.assign({}, me, updated || dto);
+        // 이 폼은 프로필 사진을 수정하지 않는다. 서버 응답에 profileURL/provider 가
+        // null/빈 값으로 와도 기존 값을 유지해, 정보 수정 직후 프로필 이미지가
+        // 잠깐 안 보이는 문제를 방지한다. (DB 값은 그대로이므로 기존 값이 정답)
+        if (me.profileURL && !merged.profileURL) merged.profileURL = me.profileURL;
+        if (me.provider && !merged.provider) merged.provider = me.provider;
         setCurrentUser(merged);
         _ownerCache[me.uid] = merged;
         closeModal();
