@@ -170,6 +170,13 @@ const Api = {
         if (file) fd.append('mediaData', file);           // @RequestPart(value="mediaData", required=false)
         return fetch(`${API_BASE_URL}/user`, { method: 'PUT', headers: authHeaders(), body: fd }).then(handleResponse);
     },
+
+    // 장소 검색 (/api/search/place) — 네이버 지역검색 프록시. 지도 중심(lat/lng)을 주면 가까운 순으로 정렬됨
+    searchPlace: (query, lat, lng) => {
+        let qs = `query=${encodeURIComponent(query)}`;
+        if (lat != null && lng != null) qs += `&lat=${lat}&lng=${lng}`;
+        return fetch(`${API_BASE_URL}/api/search/place?${qs}`, { headers: authHeaders() }).then(handleResponse);
+    },
 };
 
 // 전역 상태 (서버에서 불러온 건물 목록 캐시)
@@ -1778,43 +1785,106 @@ function showToast(msg) {
 const searchInput = document.getElementById('search-input');
 const searchResults = document.getElementById('search-results');
 
-searchInput.addEventListener('input', e => {
-    const q = e.target.value.trim().toLowerCase();
-    if (!q) { searchResults.classList.remove('show'); return; }
+// ===== 장소 검색 공용 헬퍼 =====
+// 현재 지도 중심 좌표 (장소를 "가까운 순"으로 정렬하는 기준)
+function mapCenter() {
+    try { if (typeof map !== 'undefined' && map) { const c = map.getCenter(); return { lat: c.lat(), lng: c.lng() }; } } catch (_) {}
+    return { lat: null, lng: null };
+}
+// 입력 디바운스 (검색창 키 입력마다 서버를 때리지 않도록)
+function debounce(fn, ms) {
+    let t; return function (...a) { clearTimeout(t); t = setTimeout(() => fn.apply(this, a), ms); };
+}
+// 카테고리 "음식점>한식" → "음식점 · 한식"
+function fmtCategory(c) { return (c || '').replace(/>/g, ' · '); }
 
-    // Search local buildings first
-    const localResults = state.buildings.filter(b =>
-        b.name.toLowerCase().includes(q) || b.address.toLowerCase().includes(q)
-    );
-
-    let html = localResults.map(b => `
-    <div class="search-result-item" onclick="selectBuilding('${b.id}');searchResults.classList.remove('show');searchInput.value='${b.name}'">
-      <div>${b.name}</div>
-      <div class="search-result-sub">${b.address}</div>
-    </div>
-  `).join('');
-
-    // Also search via Naver Geocoder (주소 기반 검색)
-    if (typeof naver !== 'undefined' && q.length > 1) {
-        naver.maps.Service.geocode({
-            query: q
-        }, function(status, response) {
+// 선택한 장소로 지도 이동.
+//  · 지역검색 mapx/mapy(±1e7)는 오차가 있어, 도로명/지번 주소로 재지오코딩한 좌표를 우선 사용
+//  · isPicker=true 면 "위치 설정(피커)" 중심을 옮김(건물 위치로 설정), 아니면 일반 패닝
+function gotoPlace(p, isPicker) {
+    if (!p) return;
+    const apply = (lat, lng) => {
+        if (typeof naver === 'undefined' || !map) return;
+        const ll = new naver.maps.LatLng(lat, lng);
+        if (isPicker) {
+            map.setCenter(ll); map.setZoom(17); pickerLatlng = ll;
+            if (typeof pickerSearchResults !== 'undefined' && pickerSearchResults) pickerSearchResults.classList.remove('show');
+        } else {
+            map.panTo(ll); map.setZoom(16);
+            searchResults.classList.remove('show');
+        }
+    };
+    const addr = (p.roadAddress || p.jibunAddress || '').trim();
+    if (addr && typeof naver !== 'undefined') {
+        naver.maps.Service.geocode({ query: addr }, function (status, response) {
             if (status === naver.maps.Service.Status.OK && response.v2.addresses.length > 0) {
-                html += response.v2.addresses.slice(0, 3).map(p => `
-          <div class="search-result-item" onclick="gotoNaverResult('${p.y}','${p.x}');searchInput.value='${p.roadAddress || p.jibunAddress}';searchResults.classList.remove('show')">
-            <div>${p.roadAddress || p.jibunAddress}</div>
-            <div class="search-result-sub">${p.jibunAddress}</div>
-          </div>
-        `).join('');
-                searchResults.innerHTML = html;
-                if (html) searchResults.classList.add('show');
+                const a = response.v2.addresses[0];
+                apply(parseFloat(a.y), parseFloat(a.x));
+            } else if (p.lat != null && p.lng != null) {
+                apply(p.lat, p.lng);                 // 지오코딩 실패 → 지역검색 좌표로 폴백
+            } else {
+                showToast('위치를 찾을 수 없습니다');
             }
         });
+    } else if (p.lat != null && p.lng != null) {
+        apply(p.lat, p.lng);
+    } else {
+        showToast('위치를 찾을 수 없습니다');
     }
+}
 
-    searchResults.innerHTML = html;
-    if (html) searchResults.classList.add('show');
-    else searchResults.classList.remove('show');
+// 장소 검색 결과를 검색창 드롭다운 HTML로 (places 배열은 onclick 에서 인덱스로 참조 → 따옴표 이스케이프 문제 없음)
+function renderPlaceItems(places, onclickFnName) {
+    return (places || []).map((p, i) => `
+    <div class="search-result-item" onclick="${onclickFnName}(${i})">
+      <div>${escapeHtml(p.name)}${p.category ? ` <span class="search-cat">${escapeHtml(fmtCategory(p.category))}</span>` : ''}</div>
+      <div class="search-result-sub">${escapeHtml(p.roadAddress || p.jibunAddress || '')}</div>
+    </div>`).join('');
+}
+
+// ===== 상단 검색창 — 내 건물(로컬) + 장소(가까운 순) =====
+let _topbarPlaces = [];
+let _topbarSeq = 0;     // 빠른 타이핑 시 늦게 도착한 응답이 최신 결과를 덮어쓰지 않도록
+function selectTopbarPlace(i) {
+    const p = _topbarPlaces[i];
+    if (!p) return;
+    searchInput.value = p.name;
+    gotoPlace(p, false);
+}
+
+const _runTopbarPlaceSearch = debounce((q, seq) => {
+    const c = mapCenter();
+    Api.searchPlace(q, c.lat, c.lng).then(places => {
+        if (seq !== _topbarSeq) return;             // 더 최신 검색이 있으면 무시
+        _topbarPlaces = places || [];
+        const buildingHtml = searchInput.dataset.buildingHtml || '';
+        const placeHtml = renderPlaceItems(_topbarPlaces, 'selectTopbarPlace');
+        const combined = buildingHtml + placeHtml;
+        searchResults.innerHTML = combined;
+        searchResults.classList.toggle('show', !!combined);
+    }).catch(() => { /* 장소 검색 실패 시 건물 결과만 유지 */ });
+}, 250);
+
+searchInput.addEventListener('input', e => {
+    const raw = e.target.value.trim();
+    const q = raw.toLowerCase();
+    if (!q) { searchResults.classList.remove('show'); searchInput.dataset.buildingHtml = ''; return; }
+
+    // 1) 내 건물(로컬) 즉시 표시
+    const localResults = state.buildings.filter(b =>
+        b.name.toLowerCase().includes(q) || (b.address || '').toLowerCase().includes(q)
+    );
+    const buildingHtml = localResults.map(b => `
+    <div class="search-result-item" onclick="selectBuilding('${b.id}');searchResults.classList.remove('show');searchInput.value='${(b.name || '').replace(/'/g, '')}'">
+      <div>${escapeHtml(b.name)}</div>
+      <div class="search-result-sub">${escapeHtml(b.address || '')}</div>
+    </div>`).join('');
+    searchInput.dataset.buildingHtml = buildingHtml;
+    searchResults.innerHTML = buildingHtml;
+    searchResults.classList.toggle('show', !!buildingHtml);
+
+    // 2) 장소(상호명) 검색 — 지도 중심 기준 가까운 순 (디바운스)
+    if (raw.length >= 1) { _topbarSeq++; _runTopbarPlaceSearch(raw, _topbarSeq); }
 });
 
 // 함수 이름과 줌 레벨 로직 네이버로 변경
@@ -1852,44 +1922,80 @@ function gotoPickerResult(lat, lng) {
     pickerSearchResults.classList.remove('show');
 }
 
+// 위치 설정(피커) 장소 결과 — 인덱스로 참조 (전역: 인라인 onclick 에서 호출)
+let _pickerPlaces = [];
+function selectPickerPlace(i) {
+    const p = _pickerPlaces[i];
+    if (!p) return;
+    if (pickerSearchInput) pickerSearchInput.value = p.name;
+    gotoPlace(p, true);   // 피커 중심을 그 장소로 이동 → 건물 위치로 설정
+}
+
 if (pickerSearchInput) {
-    // 입력 시 주소 후보 표시
+    let _pSeq = 0;             // 최신 검색만 반영
+    let _placeHtml = '';       // 장소(상호명) 결과 HTML
+    let _addrHtml = '';        // 주소(지오코딩) 결과 HTML
+    function renderPicker() {
+        const combined = _placeHtml + _addrHtml;
+        pickerSearchResults.innerHTML = combined;
+        pickerSearchResults.classList.toggle('show', !!combined);
+    }
+    // 장소 검색(가까운 순) — 디바운스로 호출
+    const runPickerPlace = debounce((q, seq) => {
+        const c = mapCenter();
+        Api.searchPlace(q, c.lat, c.lng).then(places => {
+            if (seq !== _pSeq) return;
+            _pickerPlaces = places || [];
+            _placeHtml = renderPlaceItems(_pickerPlaces, 'selectPickerPlace');
+            renderPicker();
+        }).catch(() => { /* 장소 검색 실패 시 주소 결과만 유지 */ });
+    }, 250);
+
+    // 입력 시: 장소(가까운 순) + 주소 후보를 함께 표시
     pickerSearchInput.addEventListener('input', e => {
         const q = e.target.value.trim();
-        if (!q || q.length < 2 || typeof naver === 'undefined') {
+        if (!q || typeof naver === 'undefined') {
+            _placeHtml = ''; _addrHtml = ''; _pickerPlaces = [];
             pickerSearchResults.classList.remove('show');
             return;
         }
+        _pSeq++; const seq = _pSeq;
+
+        // 1) 주소 후보(지오코딩)
         naver.maps.Service.geocode({ query: q }, function (status, response) {
+            if (seq !== _pSeq) return;
             if (status === naver.maps.Service.Status.OK && response.v2.addresses.length > 0) {
-                pickerSearchResults.innerHTML = response.v2.addresses.slice(0, 5).map(p => {
+                _addrHtml = response.v2.addresses.slice(0, 5).map(p => {
                     const label = (p.roadAddress || p.jibunAddress || '').replace(/'/g, '');
                     return `<div class="search-result-item" onclick="gotoPickerResult('${p.y}','${p.x}');document.getElementById('picker-search-input').value='${label}';">
-                        <div>${p.roadAddress || p.jibunAddress}</div>
-                        <div class="search-result-sub">${p.jibunAddress || ''}</div>
+                        <div>${escapeHtml(p.roadAddress || p.jibunAddress)}</div>
+                        <div class="search-result-sub">${escapeHtml(p.jibunAddress || '')}</div>
                     </div>`;
                 }).join('');
-                pickerSearchResults.classList.add('show');
             } else {
-                pickerSearchResults.innerHTML = '';
-                pickerSearchResults.classList.remove('show');
+                _addrHtml = '';
             }
+            renderPicker();
         });
+
+        // 2) 장소(상호명) — 지도 중심 기준 가까운 순
+        runPickerPlace(q, seq);
     });
 
-    // Enter → 첫 번째 결과 위치로 바로 이동
+    // Enter → 장소 결과가 있으면 가장 가까운 장소로, 없으면 주소 첫 결과로 이동
     pickerSearchInput.addEventListener('keydown', e => {
         if (e.key !== 'Enter') return;
         e.preventDefault();
         const q = pickerSearchInput.value.trim();
         if (!q || typeof naver === 'undefined') return;
+        if (_pickerPlaces.length) { selectPickerPlace(0); return; }
         naver.maps.Service.geocode({ query: q }, function (status, response) {
             if (status === naver.maps.Service.Status.OK && response.v2.addresses.length > 0) {
                 const p = response.v2.addresses[0];
                 gotoPickerResult(p.y, p.x);
                 pickerSearchInput.value = p.roadAddress || p.jibunAddress || q;
             } else {
-                showToast('주소를 찾을 수 없습니다');
+                showToast('결과를 찾을 수 없습니다');
             }
         });
     });

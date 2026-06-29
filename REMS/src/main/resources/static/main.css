@@ -889,3 +889,9 @@ html.mode-web #modal {
     font-size: 15px; font-weight: 600; cursor: pointer; font-family: var(--font);
 }
 .profile-logout:active { background: var(--red-light); }
+
+/* 검색 결과 — 장소 카테고리 라벨 (상호명 옆 작게) */
+.search-cat {
+    font-size: 11px; font-weight: 600; color: var(--gray-400);
+    margin-left: 4px;
+}
