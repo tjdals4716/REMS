@@ -77,9 +77,9 @@ html, body { height: 100%; overflow: hidden; font-family: var(--font); backgroun
 #map-wrap { flex: 1; position: relative; overflow: hidden; }
 #map { width: 100%; height: 100%; }
 
-/* MAP FLOATING CONTROLS */
+/* MAP FLOATING CONTROLS — 확대/축소/현위치: 화면 왼쪽 하단 */
 .map-float-controls {
-    position: absolute; right: 14px; bottom: 80px; z-index: 50;
+    position: absolute; left: 14px; bottom: 162px; z-index: 50;
     display: flex; flex-direction: column; gap: 8px;
 }
 .map-ctrl-btn {
@@ -91,18 +91,23 @@ html, body { height: 100%; overflow: hidden; font-family: var(--font); backgroun
 }
 .map-ctrl-btn:active { background: var(--gray-100); }
 
+/* 건물 추가(+) — 화면 오른쪽 제일 하단, 확대/축소 버튼과 동일 크기 */
 #add-btn-float {
-    position: absolute; right: 14px; bottom: 235px; z-index: 50;
-    width: 52px; height: 52px; border-radius: 16px;
+    position: absolute; right: 14px; bottom: 162px; z-index: 50;
+    width: 44px; height: 44px; border-radius: 12px;
     background: var(--blue); border: none; color: var(--white);
     box-shadow: var(--shadow-md); display: flex; align-items: center;
-    justify-content: center; cursor: pointer; font-size: 26px; line-height: 1;
+    justify-content: center; cursor: pointer; font-size: 24px; line-height: 1;
     transition: transform 0.25s cubic-bezier(0.34,1.56,0.64,1), background 0.25s, box-shadow 0.2s;
 }
 #add-btn-float:active { transform: scale(0.93); }
-/* 위치 설정(피커) 활성 상태 — + 가 45° 회전해 × 모양이 되고 색이 바뀜 */
-#add-btn-float.picking { background: var(--gray-700); transform: rotate(45deg); }
-#add-btn-float.picking:active { transform: rotate(45deg) scale(0.93); }
+/* 위치 설정(피커) 활성 — + 가 45° 회전해 × 가 되고, 취소(빨강) 스타일로 강조 */
+#add-btn-float.picking {
+    background: var(--red); color: var(--white);
+    transform: rotate(45deg);
+    box-shadow: 0 4px 16px rgba(220,38,38,0.45), 0 2px 6px rgba(220,38,38,0.30);
+}
+#add-btn-float.picking:active { transform: rotate(45deg) scale(0.92); }
 
 /* STATS BAR */
 #stats-bar {
@@ -637,8 +642,39 @@ html, body { height: 100%; overflow: hidden; font-family: var(--font); backgroun
 /* 2) 몰입 모드 — 지도 클릭 시 상단은 위로, 하단은 아래로 슬라이드 아웃 */
 #app.chrome-hidden #topbar { transform: translateY(-130%); }
 #app.chrome-hidden #bottom-nav { transform: translateY(130%); }
+#app.chrome-hidden #bottom-sheet { transform: translateY(120%) !important; }  /* peek도 잠시 숨김 */
 #app.chrome-hidden .map-float-controls,
 #app.chrome-hidden #add-btn-float { opacity: 0; pointer-events: none; }
+
+/* 2-1) 현재 위치 마커 — 네이버 지도앱 스타일(파란 점 + 방향 부채꼴 + 정확도 펄스) */
+.geo-loc-marker { position: relative; width: 44px; height: 44px; }
+.geo-loc-dot {
+    position: absolute; left: 50%; top: 50%; width: 16px; height: 16px;
+    margin: -8px 0 0 -8px; border-radius: 50%;
+    background: var(--blue); border: 2.5px solid #fff;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.35);
+    z-index: 2;
+}
+.geo-loc-pulse {
+    position: absolute; left: 50%; top: 50%; width: 16px; height: 16px;
+    margin: -8px 0 0 -8px; border-radius: 50%;
+    background: rgba(26,86,219,0.25);
+    animation: geoPulse 2s ease-out infinite; z-index: 1;
+}
+@keyframes geoPulse {
+    0%   { transform: scale(1);   opacity: 0.55; }
+    100% { transform: scale(3.4); opacity: 0; }
+}
+/* 방향 부채꼴(기기 나침반 방향으로 회전). 기본 0deg = 북쪽(위) */
+.geo-loc-beam {
+    position: absolute; left: 50%; top: 50%;
+    width: 46px; height: 40px; margin: -40px 0 0 -23px;
+    transform-origin: 50% 100%;            /* 점(중심)을 기준으로 회전 */
+    transform: rotate(0deg); z-index: 1; pointer-events: none;
+    background: linear-gradient(to top, rgba(26,86,219,0.55), rgba(26,86,219,0));
+    clip-path: polygon(50% 100%, 0 0, 100% 0);
+    transition: transform 0.18s linear;
+}
 
 /* 3) 바텀시트 — JS가 inline transform 으로 위치 제어(부드러운 드래그) */
 #bottom-sheet {

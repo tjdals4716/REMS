@@ -107,6 +107,13 @@ async function login(uid, password) {
     return jwt;
 }
 
+// 로그아웃 확인 — "로그아웃을 진행하시겠습니까?" 후 진행
+function confirmLogout() {
+    if (!confirm('로그아웃을 진행하시겠습니까?')) return;
+    logout();
+    location.href = 'login.html';
+}
+
 // 로그아웃: 저장된 인증 정보 전부 제거 (login.js가 토큰 존재만 보고 되돌리는 루프 방지)
 function logout() {
     localStorage.removeItem('accessToken');
@@ -232,17 +239,110 @@ async function initMap() {
     document.getElementById('my-location-btn').onclick = gotoMyLocation;
     document.getElementById('add-btn-float').onclick = toggleMapPicker;
     document.getElementById('map-picker-confirm').onclick = confirmPickerLocation;
+
+    // 현재 위치 추적 시작(파란 점). iOS가 아니면 나침반도 바로 연결
+    startGeolocationTracking();
+    if (!(typeof DeviceOrientationEvent !== 'undefined' &&
+          typeof DeviceOrientationEvent.requestPermission === 'function')) {
+        ensureOrientationPermission();
+    }
 }
 
 function gotoMyLocation() {
-    if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(pos => {
-            const latlng = new naver.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
-            map.setCenter(latlng);
-            map.setZoom(16); // 내 위치는 확대해서 보여줌
+    ensureOrientationPermission();           // iOS: 사용자 제스처에서 나침반 권한 요청
+    if (!navigator.geolocation) { showToast('위치 권한이 필요합니다'); return; }
+    navigator.geolocation.getCurrentPosition(pos => {
+        const latlng = new naver.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
+        updateGeoMarker(latlng, pos.coords.heading);
+        map.setCenter(latlng);
+        map.setZoom(16); // 내 위치는 확대해서 보여줌
+    }, () => showToast('위치 권한이 필요합니다'), { enableHighAccuracy: true });
+    if (geoWatchId == null) startGeolocationTracking();
+}
+
+// =====================================================
+// 현재 위치 + 방향(나침반) — 네이버 지도앱 스타일
+// =====================================================
+let geoMarker = null;
+let geoWatchId = null;
+let geoHeading = 0;
+let _oriAsked = false;
+
+// 지도 로드시 현재 위치 추적 시작 → 파란 점 + 방향 부채꼴 표시
+function startGeolocationTracking() {
+    if (!navigator.geolocation || !map) return;
+    if (geoWatchId != null) return;
+    geoWatchId = navigator.geolocation.watchPosition(pos => {
+        const latlng = new naver.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
+        updateGeoMarker(latlng, pos.coords.heading);
+    }, () => {}, { enableHighAccuracy: true, maximumAge: 1000, timeout: 12000 });
+}
+
+function geoMarkerContent() {
+    return '' +
+        '<div class="geo-loc-marker">' +
+        '  <div class="geo-loc-beam" id="geo-loc-beam"></div>' +
+        '  <div class="geo-loc-pulse"></div>' +
+        '  <div class="geo-loc-dot"></div>' +
+        '</div>';
+}
+
+function updateGeoMarker(latlng, gpsHeading) {
+    if (!map) return;
+    if (!geoMarker) {
+        geoMarker = new naver.maps.Marker({
+            position: latlng,
+            map: map,
+            zIndex: 1000,
+            clickable: false,
+            icon: {
+                content: geoMarkerContent(),
+                size: new naver.maps.Size(44, 44),
+                anchor: new naver.maps.Point(22, 22)
+            }
         });
     } else {
-        showToast('위치 권한이 필요합니다');
+        geoMarker.setPosition(latlng);
+    }
+    // GPS 이동방향이 있으면 그것도 반영(걷는 중)
+    if (typeof gpsHeading === 'number' && !isNaN(gpsHeading)) {
+        geoHeading = gpsHeading;
+        applyGeoHeading();
+    }
+}
+
+function applyGeoHeading() {
+    const beam = document.getElementById('geo-loc-beam');
+    if (beam) beam.style.transform = 'rotate(' + geoHeading + 'deg)';
+}
+
+// 기기 방향(나침반) 핸들러 — iOS의 webkitCompassHeading 우선, 그 외엔 alpha 변환
+function _onDeviceOrientation(e) {
+    let hd = null;
+    if (typeof e.webkitCompassHeading === 'number' && !isNaN(e.webkitCompassHeading)) {
+        hd = e.webkitCompassHeading;                       // iOS: 이미 북=0, 시계방향
+    } else if (e.alpha != null && !isNaN(e.alpha)) {
+        hd = (360 - e.alpha) % 360;                        // Android 등: 북 기준으로 변환
+    }
+    if (hd != null) { geoHeading = hd; applyGeoHeading(); }
+}
+
+function _attachOrientation() {
+    window.addEventListener('deviceorientationabsolute', _onDeviceOrientation, true);
+    window.addEventListener('deviceorientation', _onDeviceOrientation, true);
+}
+
+// iOS 13+ 는 사용자 제스처에서 권한 요청 필요
+function ensureOrientationPermission() {
+    if (_oriAsked) return;
+    _oriAsked = true;
+    if (typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function') {
+        DeviceOrientationEvent.requestPermission()
+            .then(state => { if (state === 'granted') _attachOrientation(); })
+            .catch(() => {});
+    } else {
+        _attachOrientation();
     }
 }
 
@@ -260,21 +360,21 @@ function renderMarkers() {
         const content = `
       <div onclick="selectBuilding('${b.id}')" style="
         position:relative; cursor:pointer;
-        background:white; border:2.5px solid ${color};
-        border-radius:12px; padding:5px 10px;
-        box-shadow:0 3px 10px rgba(0,0,0,0.18);
+        background:white; border:2px solid ${color};
+        border-radius:9px; padding:3px 7px;
+        box-shadow:0 2px 7px rgba(0,0,0,0.16);
         font-family:-apple-system,sans-serif;
-        min-width:70px; text-align:center;
+        min-width:52px; text-align:center;
         transform:translateX(-50%) translateY(-100%);
-        margin-bottom:8px;
+        margin-bottom:7px;
       ">
-        <div style="font-size:12px;font-weight:700;color:#111;">${b.name}</div>
-        <div style="font-size:10px;color:${color};font-weight:600;margin-top:1px;">
+        <div style="font-size:10.5px;font-weight:700;color:#111;line-height:1.2;">${b.name}</div>
+        <div style="font-size:9px;color:${color};font-weight:600;margin-top:1px;">
           공실 ${unitStats.empty} · 임차 ${unitStats.occupied}
         </div>
-        <div style="position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);
-          width:0;height:0;border-left:7px solid transparent;
-          border-right:7px solid transparent;border-top:7px solid ${color};">
+        <div style="position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);
+          width:0;height:0;border-left:6px solid transparent;
+          border-right:6px solid transparent;border-top:6px solid ${color};">
         </div>
       </div>
     `;
@@ -285,7 +385,7 @@ function renderMarkers() {
             map: map,
             icon: {
                 content: content,
-                size: new naver.maps.Size(70, 40),
+                size: new naver.maps.Size(52, 34),
                 anchor: new naver.maps.Point(0, 0) // CSS transform으로 중심을 맞췄으므로 여기선 0,0 처리
             }
         });
@@ -356,9 +456,11 @@ const Sheet = (function () {
     const header = document.getElementById('sheet-header');
 
     let mode = 'building';     // 'building' | 'tab'
-    let current = 'closed';    // 'full' | 'half' | 'closed'
+    let current = 'closed';    // 'full' | 'half' | 'peek' | 'closed'
     let dragging = false;
     let startY = 0, startPx = 0, lastY = 0, lastT = 0, vel = 0;
+
+    const PEEK = 156;          // peek 상태에서 화면에 남겨둘 시트 높이(px) — "위에 살짝만"
 
     // 시트 높이/화면 높이를 기준으로 각 스냅 지점의 translateY(px)를 계산
     function metrics() {
@@ -366,8 +468,9 @@ const Sheet = (function () {
         const H = el.offsetHeight || A * 0.88;
         return {
             full: 0,                                         // 맨 위로 올라온 상태
-            half: Math.max(0, Math.round(H - A * 0.40)),     // 화면의 약 60%(=아래 2/3) 지점에서 걸림
-            closed: Math.round(H + 24)                        // 화면 밖으로 완전히 내려감
+            half: Math.max(0, Math.round(H - A * 0.45)),     // 중간 지점에서 걸림
+            peek: Math.max(0, Math.round(H - PEEK)),         // 아래로 다 내려도 살짝 남김(완전히 안 닫힘)
+            closed: Math.round(H + 24)                        // 완전히 숨김(몰입모드/초기 진입 애니메이션용)
         };
     }
     function curTranslate() {
@@ -390,7 +493,7 @@ const Sheet = (function () {
         mode = m;
         el.dataset.mode = m;
         setImmersive(false);                       // 시트가 열리면 상/하단 UI는 보이게
-        target = target || (m === 'tab' ? 'full' : 'full');
+        target = target || 'full';
         if (current === 'closed') {
             apply(metrics().closed, false);        // 아래에서 시작
             void el.offsetHeight;                  // reflow → 진입 애니메이션 보장
@@ -399,17 +502,25 @@ const Sheet = (function () {
             snap(target, true);
         }
     }
-    function dismiss() {
-        const wasMode = mode;
-        if (current === 'closed') { afterClose(wasMode); return; }
-        snap('closed', true);
-        setTimeout(() => afterClose(wasMode), 340);
+    // 아래로 다 내려도 완전히 닫지 않고 peek(살짝 남김)으로 — 사용중인 폼이 사라지지 않게
+    function collapse() {
+        if (current === 'closed') {
+            apply(metrics().closed, false);
+            void el.offsetHeight;
+            requestAnimationFrame(() => snap('peek', true));
+        } else {
+            snap('peek', true);
+        }
+        // peek은 '닫힘'이 아니므로 currentBuilding(사용중인 폼 컨텍스트)을 유지한다
     }
-    function afterClose(wasMode) {
-        if ((wasMode || mode) === 'tab' && activeTab !== 'map') markTab('map');
+    // 화면 밖으로 완전히 숨김(위치설정/몰입모드 전환 등 특수한 경우만)
+    function hardClose() {
+        snap('closed', true);
         currentBuilding = null;
     }
-    function isOpen() { return current !== 'closed'; }
+    function dismiss() { collapse(); }            // 호환용: dismiss=peek로 수렴
+    function isOpen() { return current === 'full' || current === 'half'; }  // 펼쳐진 상태만 '열림'
+    function isPeek() { return current === 'peek'; }
 
     // ---------- 드래그(터치/마우스 공용) ----------
     function down(e) {
@@ -423,7 +534,7 @@ const Sheet = (function () {
     function move(e) {
         if (!dragging) return;
         const y = (e.touches ? e.touches[0].clientY : e.clientY);
-        const max = metrics().closed;
+        const max = metrics().peek;                // 아래로는 peek까지만(완전히 안 닫힘)
         const px = Math.max(0, Math.min(startPx + (y - startY), max));
         el.style.transform = 'translateY(' + px + 'px)';
         const now = Date.now(), dt = now - lastT;
@@ -439,18 +550,17 @@ const Sheet = (function () {
         const pos = curTranslate();
         const TH = 0.55;                            // 플릭 속도 임계값(px/ms)
         let target;
-        if (vel > TH) {                             // 아래로 빠르게 → 한 단계 내림
-            target = current === 'full' ? 'half' : 'closed';
+        if (vel > TH) {                             // 아래로 빠르게 → 한 단계 내림(최하단은 peek)
+            target = current === 'full' ? 'half' : 'peek';
         } else if (vel < -TH) {                     // 위로 빠르게 → 한 단계 올림
-            target = current === 'closed' ? 'half' : 'full';
+            target = current === 'peek' ? 'half' : 'full';
         } else {                                    // 천천히 놓으면 가장 가까운 지점으로 스냅
-            const cand = (m.half > 4 && m.half < m.closed - 4)
-                ? ['full', 'half', 'closed'] : ['full', 'closed'];
+            const cand = (m.half > 4 && m.half < m.peek - 4)
+                ? ['full', 'half', 'peek'] : ['full', 'peek'];
             target = cand.reduce((a, b) =>
                 Math.abs(m[b] - pos) < Math.abs(m[a] - pos) ? b : a, cand[0]);
         }
-        if (target === 'closed') dismiss();
-        else snap(target, true);
+        snap(target, true);
     }
 
     [handle, header].forEach(t => {
@@ -464,17 +574,20 @@ const Sheet = (function () {
     window.addEventListener('mouseup', up);
     window.addEventListener('resize', () => { if (isOpen()) snap(current, false); });
 
-    return { open, dismiss, snap, isOpen };
+    return { open, collapse, dismiss, hardClose, snap, isOpen, isPeek };
 })();
 
-// 기존 호출부 호환: ''=닫기, 'full'=탭 시트, 그 외('center'/'half'/'peek')=건물 상세
+// 기존 호출부 호환: ''=peek(살짝 남김), 'full'=탭 시트, 그 외('center'/'half'/'peek')=건물 상세
 function showSheet(state_) {
-    if (!state_) { Sheet.dismiss(); return; }
+    if (!state_) { Sheet.collapse(); return; }   // 완전히 닫지 않고 peek
     if (state_ === 'full') { Sheet.open('tab', 'full'); return; }
     Sheet.open('building', 'full');
 }
 function closeSheet() {
-    Sheet.dismiss();
+    // ✕(닫기)도 완전히 닫지 않고 목록을 살짝 남긴 peek 상태로
+    markTab('map');
+    showBuildingList();
+    Sheet.collapse();
     currentBuilding = null;
 }
 
@@ -609,7 +722,7 @@ function startAddBuilding() {
     const addBtn = document.getElementById('add-btn-float');
     addBtn.classList.add('picking');      // + → × (취소 아이콘)
     addBtn.title = '위치 설정 취소';
-    showSheet('');
+    Sheet.hardClose();                    // 위치 설정 중엔 시트를 완전히 내려 지도를 비움
     document.getElementById('sheet-body').innerHTML = `<div class="empty-state"><div class="empty-state-icon">📍</div><div class="empty-state-title">지도를 이동하여 위치 설정</div><div class="empty-state-sub">건물 위치를 지도 위에서 직접 설정하세요</div></div>`;
 }
 
@@ -630,6 +743,8 @@ function cancelMapPicker() {
     const addBtn = document.getElementById('add-btn-float');
     addBtn.classList.remove('picking');
     addBtn.title = '건물 추가';
+    showBuildingList();
+    Sheet.collapse();                     // 취소하면 목록을 다시 살짝 띄움(peek)
 }
 
 function confirmPickerLocation() {
@@ -1474,7 +1589,8 @@ function switchTab(tab) {
 
     if (tab === 'map') {
         markTab('map');
-        Sheet.dismiss();                 // 지도는 항상 배경 → 시트만 닫음
+        showBuildingList();              // 지도와 함께 보일 목록을 peek 콘텐츠로
+        Sheet.collapse();                // 완전히 닫지 않고 살짝 남김(peek)
         return;
     }
 
