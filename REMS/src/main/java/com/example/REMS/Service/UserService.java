@@ -31,6 +31,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -135,53 +136,96 @@ public class UserService {
         return UserDTO.entityToDto(userEntity);
     }
 
-    // 회원 수정
+    // 회원 수정 (닉네임/프로필 등 부분 업데이트, 새 이미지가 없으면 기존 프로필 그대로 유지)
     public UserDTO updateUser(UserDTO userDTO, MultipartFile mediaFile, UserDetails userDetails) {
-        if (!userDetails.getUsername().equals(userDTO.getUid())) {
+        if (userDetails == null || !userDetails.getUsername().equals(userDTO.getUid())) {
             throw new RuntimeException("권한이 없습니다");
         }
-        UserEntity userEntity = userRepository.findById(userDTO.getId()).orElseThrow();
-        userEntity.setName(userDTO.getName());
-        userEntity.setNickname(userDTO.getNickname());
-        userEntity.setEmail(userDTO.getEmail());
-        userEntity.setPhone(userDTO.getPhone());
-        userEntity.setAddress(userDTO.getAddress());
-        userEntity.setAge(userDTO.getAge());
-        userEntity.setGender(userDTO.getGender());
+        UserEntity userEntity = userRepository.findByUid(userDTO.getUid())
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다"));
 
-        // 프로필 이미지 변경
-        String profileURL = null;
+        // 전달된 값만 갱신 (null 이면 기존 값 유지 → 사진만 바꿔도 다른 정보가 지워지지 않음)
+        if (userDTO.getName() != null) userEntity.setName(userDTO.getName());
+        if (userDTO.getNickname() != null) userEntity.setNickname(userDTO.getNickname());
+        if (userDTO.getEmail() != null) userEntity.setEmail(userDTO.getEmail());
+        if (userDTO.getPhone() != null) userEntity.setPhone(userDTO.getPhone());
+        if (userDTO.getAddress() != null) userEntity.setAddress(userDTO.getAddress());
+        if (userDTO.getGender() != null) userEntity.setGender(userDTO.getGender());
+        userEntity.setAge(userDTO.getAge());
+
+        // ★ 핵심 수정: 새 이미지가 있을 때만 프로필 교체. 없으면 기존 프로필 URL 유지.
+        //   (기존 코드는 새 파일이 없으면 profileURL 을 null 로 덮어써서 프로필 사진이 사라지는 버그가 있었음)
         if (mediaFile != null && !mediaFile.isEmpty()) {
-            try {
-                //UUID를 사용함으로써 버킷에 저장되는 미디어 파일들이 파일 이름 중복으로 충돌이 일어나지 않음
-                UUID uuid = UUID.randomUUID();
-                String fileExtension = mediaFile.getOriginalFilename().substring(mediaFile.getOriginalFilename().lastIndexOf("."));
-                String fileName = uuid.toString() + fileExtension;
-                String contentType;
-                switch (fileExtension.toLowerCase()) {
-                    case ".jpg":
-                    case ".jpeg": contentType = "image/jpeg"; break;
-                    case ".png": contentType = "image/png"; break;
-                    case ".bmp": contentType = "image/bmp"; break;
-                    case ".gif": contentType = "image/gif"; break;
-                    case ".mp4": contentType = "video/mp4"; break;
-                    case ".avi": contentType = "video/avi"; break;
-                    case ".wmv": contentType = "video/wmv"; break;
-                    case ".mpeg:": contentType = "video/mpeg"; break;
-                    default: contentType = "application/octet-stream";
-                }
-                BlobId blobId = BlobId.of("olympick", fileName);
-                BlobInfo blobInfo = BlobInfo.newBuilder(blobId).setContentType(contentType).setContentDisposition("inline; filename=" + mediaFile.getOriginalFilename()).build();
-                storage.create(blobInfo, mediaFile.getBytes());
-                profileURL = googleCouldHeader + fileName;
-            } catch (IOException e) {
-                throw new RuntimeException("미디어 파일 업로드 중 오류가 발생했습니다.", e);
-            }
+            userEntity.setProfileURL(uploadProfileImage(mediaFile));
+        } else if (userDTO.getProfileURL() != null && userDTO.getProfileURL().isEmpty()) {
+            // profileURL 을 빈 문자열("")로 명시해 보내면 프로필 제거 (기존 GCS 파일도 best-effort 정리)
+            deleteProfileImageQuietly(userEntity.getProfileURL());
+            userEntity.setProfileURL(null);
         }
-        userEntity.setProfileURL(profileURL);
+        // (그 외: 새 이미지도 없고 profileURL 도 안 보냈으면 기존 프로필 그대로 유지)
+
         UserEntity updatedUser = userRepository.save(userEntity);
-        logger.info(userDTO.getId() + "번 사용자 정보 업데이트 완료!");
+        logger.info(userEntity.getId() + "번 사용자 정보 업데이트 완료!");
         return UserDTO.entityToDto(updatedUser);
+    }
+
+    // 프로필 이미지 GCS 업로드 (UUID 파일명으로 충돌 방지)
+    private String uploadProfileImage(MultipartFile mediaFile) {
+        try {
+            UUID uuid = UUID.randomUUID();
+            String original = mediaFile.getOriginalFilename();
+            String ext = (original != null && original.contains(".")) ? original.substring(original.lastIndexOf(".")) : "";
+            String fileName = uuid.toString() + ext;
+
+            String contentType;
+            switch (ext.toLowerCase()) {
+                case ".jpg":
+                case ".jpeg": contentType = "image/jpeg"; break;
+                case ".png": contentType = "image/png"; break;
+                case ".bmp": contentType = "image/bmp"; break;
+                case ".gif": contentType = "image/gif"; break;
+                case ".webp": contentType = "image/webp"; break;
+                default: contentType = "application/octet-stream";
+            }
+
+            BlobId blobId = BlobId.of("olympick", fileName);
+            BlobInfo blobInfo = BlobInfo.newBuilder(blobId)
+                    .setContentType(contentType)
+                    .setContentDisposition("inline; filename=" + (original != null ? original : fileName))
+                    .build();
+            storage.create(blobInfo, mediaFile.getBytes());
+            return googleCouldHeader + fileName;
+        } catch (IOException e) {
+            throw new RuntimeException("미디어 파일 업로드 중 오류가 발생했습니다.", e);
+        }
+    }
+
+    // 기존 프로필 이미지 GCS 파일 삭제 (best-effort, 실패해도 흐름 막지 않음)
+    private void deleteProfileImageQuietly(String profileURL) {
+        try {
+            if (profileURL == null || profileURL.isEmpty()) return;
+            if (googleCouldHeader == null || !profileURL.startsWith(googleCouldHeader)) return;
+            String fileName = profileURL.substring(googleCouldHeader.length());
+            if (!fileName.isEmpty()) {
+                storage.delete(BlobId.of("olympick", fileName));
+            }
+        } catch (Exception ex) {
+            logger.warn("기존 프로필 이미지 삭제 실패(무시): {}", ex.getMessage());
+        }
+    }
+
+    // 공개 프로필 카드 조회 — 매물 등록자(다른 사용자) 이름/프로필 표시용.
+    //   본인 제한 없이 인증된 사용자라면 누구나 조회 가능. 이메일/휴대폰 등 민감정보는 제외.
+    public Map<String, Object> getPublicProfile(String uid) {
+        UserEntity userEntity = userRepository.findByUid(uid)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다"));
+        Map<String, Object> card = new HashMap<>();
+        card.put("uid", userEntity.getUid());
+        card.put("name", userEntity.getName());
+        card.put("nickname", userEntity.getNickname());
+        card.put("profileURL", userEntity.getProfileURL());
+        card.put("provider", userEntity.getProvider());
+        return card;
     }
 
     // 회원 탈퇴 (삭제)

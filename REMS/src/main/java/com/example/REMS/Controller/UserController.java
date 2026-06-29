@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/user")
@@ -64,10 +65,18 @@ public class UserController {
     @SneakyThrows
     @Operation(summary = "회원 수정")
     @PutMapping(consumes = {MediaType.APPLICATION_JSON_VALUE, MediaType.MULTIPART_FORM_DATA_VALUE})
-    public ResponseEntity<UserDTO> updateUser(@RequestPart("userData") String userData, @RequestPart(value = "mediaData") MultipartFile mediaData, @AuthenticationPrincipal UserDetails userDetails) {
+    public ResponseEntity<UserDTO> updateUser(@RequestPart("userData") String userData, @RequestPart(value = "mediaData", required = false) MultipartFile mediaData, @AuthenticationPrincipal UserDetails userDetails) {
         ObjectMapper mapper = new ObjectMapper();
+        mapper.configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         UserDTO userDTO = mapper.readValue(userData, UserDTO.class);
         return ResponseEntity.ok(userService.updateUser(userDTO, mediaData, userDetails));
+    }
+
+    // 공개 프로필 카드 조회 (매물 등록자 이름/프로필 표시용) — 본인 제한 없음
+    @Operation(summary = "공개 프로필 카드 조회 (uid)")
+    @GetMapping("/profile/{uid}")
+    public ResponseEntity<Map<String, Object>> getPublicProfile(@PathVariable("uid") String uid) {
+        return ResponseEntity.ok(userService.getPublicProfile(uid));
     }
 
     // 회원 삭제

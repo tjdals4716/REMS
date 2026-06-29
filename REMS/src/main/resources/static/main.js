@@ -158,10 +158,84 @@ const Api = {
         fetch(`${API_BASE_URL}/unit/${getUid()}/${id}`, { method: 'PUT', headers: authHeaders(true), body: JSON.stringify(dto) }).then(handleResponse),
     deleteUnit: (id) =>
         fetch(`${API_BASE_URL}/unit/delete/${getUid()}/${id}`, { method: 'DELETE', headers: authHeaders() }).then(handleResponse),
+
+    // 사용자 (/user)
+    // 공개 프로필 카드 조회 — 매물 등록자 등 "다른 사용자"의 이름/프로필을 가져옴
+    getUserProfile: (uid) =>
+        fetch(`${API_BASE_URL}/user/profile/${encodeURIComponent(uid)}`, { headers: authHeaders() }).then(handleResponse),
+    // 회원 수정 (프로필 사진 변경) — userData(JSON 문자열) + 선택적 mediaData(파일) 멀티파트 전송
+    updateUser: (userDTO, file) => {
+        const fd = new FormData();
+        fd.append('userData', JSON.stringify(userDTO));   // @RequestPart("userData") String
+        if (file) fd.append('mediaData', file);           // @RequestPart(value="mediaData", required=false)
+        return fetch(`${API_BASE_URL}/user`, { method: 'PUT', headers: authHeaders(), body: fd }).then(handleResponse);
+    },
 };
 
 // 전역 상태 (서버에서 불러온 건물 목록 캐시)
 let state = { buildings: [] };
+
+// =====================================================
+// 사용자 프로필 헬퍼 (설정 화면 · 매물 등록자 표시 공용)
+// =====================================================
+// 로그인 시 저장된 사용자 객체(UserDTO) 읽기/쓰기 — name, profileURL, provider 등 포함
+function getCurrentUser() {
+    try { return JSON.parse(localStorage.getItem('currentUser') || 'null'); } catch (_) { return null; }
+}
+function setCurrentUser(u) {
+    try { localStorage.setItem('currentUser', JSON.stringify(u)); } catch (_) {}
+}
+
+// HTML/속성 이스케이프 (이름에 <, ", & 등이 들어가도 마크업이 깨지지 않게)
+function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// 소셜 로그인 제공자 → 표시 정보(라벨/색상)
+function providerInfo(p) {
+    switch (String(p || '').toLowerCase()) {
+        case 'kakao':  return { label: '카카오', color: '#191600', bg: '#FEE500', border: '' };
+        case 'naver':  return { label: '네이버', color: '#ffffff', bg: '#03C75A', border: '' };
+        case 'google': return { label: '구글',  color: '#374151', bg: '#ffffff', border: '#e5e7eb' };
+        default:        return { label: '이메일', color: '#374151', bg: '#f3f4f6', border: '' };
+    }
+}
+function providerBadge(p) {
+    const i = providerInfo(p);
+    return `<span class="provider-badge" style="background:${i.bg};color:${i.color};${i.border ? `border:1px solid ${i.border};` : ''}">${i.label}</span>`;
+}
+function providerLoginText(p) {
+    return `${providerInfo(p).label} 계정으로 로그인됨`;
+}
+
+// 아바타(프로필 원형) — 이미지가 있으면 사진, 없거나 로드 실패하면 이름 첫 글자
+function avatarHTML(profile, sizePx) {
+    const url = profile && profile.profileURL ? profile.profileURL : '';
+    const name = (profile && (profile.name || profile.nickname)) || '';
+    const initial = name ? name.trim().charAt(0) : '👤';
+    const sz = sizePx || 40;
+    return `<div class="avatar" style="width:${sz}px;height:${sz}px;font-size:${Math.round(sz * 0.42)}px;">
+        <span class="avatar-initial">${escapeHtml(initial)}</span>
+        ${url ? `<img src="${escapeHtml(url)}" alt="" onerror="this.remove()">` : ''}
+    </div>`;
+}
+
+// 매물 등록자 프로필 캐시 (uid -> {name, profileURL, provider})
+const _ownerCache = {};
+async function fetchOwnerProfile(uid) {
+    if (!uid) return null;
+    if (_ownerCache[uid]) return _ownerCache[uid];
+    const me = getCurrentUser();
+    if (me && me.uid === uid) { _ownerCache[uid] = me; return me; }   // 본인이면 로컬 정보 사용
+    try {
+        const p = await Api.getUserProfile(uid);
+        _ownerCache[uid] = p || { uid };
+        return _ownerCache[uid];
+    } catch (_) {
+        return { uid };   // 실패 시 uid 만으로 표시
+    }
+}
 
 // 서버에서 전체 건물(+호실)을 불러와 state에 저장
 async function loadData(isInitial) {
@@ -654,6 +728,14 @@ function showBuildingDetail(b) {
     const body = document.getElementById('sheet-body');
     body.innerHTML = `
     ${renderGallery(b)}
+    <!-- 매물 등록자(커뮤니티 스타일) — 프로필 + 이름 -->
+    <div class="owner-card" id="ownercard-${b.id}">
+      ${avatarHTML(null, 40)}
+      <div style="min-width:0;flex:1;">
+        <div class="owner-card-label">매물 등록자</div>
+        <div class="owner-card-name">불러오는 중…</div>
+      </div>
+    </div>
     <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       ${isMine(b) ? `
       <button onclick="openEditBuilding('${b.id}')" style="padding:7px 14px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;font-size:13px;font-weight:600;color:#374151;cursor:pointer;">✏️ 건물 수정</button>
@@ -710,6 +792,24 @@ function showBuildingDetail(b) {
     }
     </div>
   `;
+    hydrateOwnerCard(b);
+}
+
+// 매물 등록자 카드 채우기 — 등록자 프로필을 비동기로 불러와 이름/사진/제공자 표시
+async function hydrateOwnerCard(b) {
+    const el = document.getElementById('ownercard-' + b.id);
+    if (!el) return;
+    const p = await fetchOwnerProfile(b.ownerUid);
+    const name = (p && (p.name || p.nickname)) || b.ownerUid || '알 수 없음';
+    const mine = isMine(b);
+    el.innerHTML = `
+      ${avatarHTML(p, 40)}
+      <div style="min-width:0;flex:1;">
+        <div class="owner-card-label">매물 등록자</div>
+        <div class="owner-card-name">${escapeHtml(name)}${mine ? '<span class="owner-you">나</span>' : ''}</div>
+      </div>
+      ${p && p.provider ? providerBadge(p.provider) : ''}
+    `;
 }
 
 // =====================================================
@@ -1340,40 +1440,55 @@ function showStatsView() {
 }
 
 function showSettingsView() {
-    document.getElementById('sheet-title').textContent = '설정';
-    document.getElementById('sheet-subtitle').textContent = '앱 설정 및 데이터 관리';
+    document.getElementById('sheet-title').textContent = '내 프로필';
+    document.getElementById('sheet-subtitle').textContent = '로그인한 계정 정보';
+
+    const me = getCurrentUser() || {};
+    const name = me.name || me.nickname || '이름 없음';
 
     document.getElementById('sheet-body').innerHTML = `
-    <div style="display:flex;flex-direction:column;gap:10px;">
-      <div style="padding:14px;background:#f9fafb;border-radius:12px;">
-        <div style="font-size:13px;font-weight:700;color:#374151;margin-bottom:10px;">카카오맵 API 키 설정</div>
-        <input id="kakao-key" class="form-input" type="text" placeholder="카카오 앱 키 입력" value="${localStorage.getItem('kakao_key')||''}">
-        <button class="btn-primary" style="margin-top:8px;" onclick="saveKakaoKey()">저장 및 재시작</button>
-        <div style="font-size:12px;color:#9ca3af;margin-top:6px;">developers.kakao.com에서 앱 등록 후 JavaScript 키를 입력하세요</div>
+    <div class="profile-page">
+      <!-- 위에 작게: 현재 어떤 소셜 로그인으로 로그인했는지 -->
+      <div class="profile-provider">
+        ${providerBadge(me.provider)}
+        <span>${providerLoginText(me.provider)}</span>
       </div>
 
-      <div style="padding:14px;background:#f9fafb;border-radius:12px;">
-        <div style="font-size:13px;font-weight:700;color:#374151;margin-bottom:10px;">데이터 관리</div>
-        <div style="display:flex;flex-direction:column;gap:8px;">
-          <button class="btn-secondary" onclick="openImportNaver()">🏢 네이버 매물 JSON 가져오기</button>
-          <button class="btn-secondary" onclick="exportData()">📤 데이터 내보내기 (JSON)</button>
-          <button class="btn-secondary" onclick="document.getElementById('import-file').click()">📥 데이터 가져오기</button>
-          <input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(event)">
-          <button style="padding:13px;border-radius:12px;border:1px solid #fee2e2;background:#fff;color:#dc2626;font-size:15px;font-weight:600;cursor:pointer;" onclick="resetData()">🗑️ 전체 데이터 초기화</button>
-        </div>
-      </div>
+      <!-- 로그인된 사용자 프로필(사진) -->
+      ${avatarHTML(me, 96)}
 
-      <div style="padding:14px;background:#f0f9ff;border-radius:12px;font-size:12px;color:#0369a1;line-height:1.6;">
-        <strong>PWA 설치 방법</strong><br>
-        Safari → 공유 버튼 → 홈 화면에 추가<br>
-        Chrome → 주소창 우측 설치 아이콘 클릭
-      </div>
+      <!-- name 값 -->
+      <div class="profile-name">${escapeHtml(name)}</div>
+      ${me.email ? `<div class="profile-sub">${escapeHtml(me.email)}</div>` : ''}
 
-      <div style="padding:14px;background:#f9fafb;border-radius:12px;font-size:12px;color:#6b7280;">
-        마이빌딩 v1.0 · 데이터는 서버에 저장됩니다
+      <input type="file" id="profile-file" accept="image/*" style="display:none" onchange="changeProfilePhoto(event)">
+      <div class="profile-actions">
+        <button class="btn-secondary" onclick="document.getElementById('profile-file').click()">📷 프로필 사진 변경</button>
+        <button class="profile-logout" onclick="confirmLogout()">로그아웃</button>
       </div>
     </div>
   `;
+}
+
+// 프로필 사진 변경 — 선택한 이미지를 회원수정 API(PUT /user)로 업로드하고 화면/캐시 갱신
+async function changeProfilePhoto(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';                 // 같은 파일 재선택 가능하게 초기화
+    if (!file) return;
+    const me = getCurrentUser();
+    if (!me || !me.uid) { showToast('로그인 정보를 찾을 수 없습니다'); return; }
+    try {
+        showToast('프로필 사진 업로드 중…');
+        // name 은 함께 보내 기존 값 유지(부분 업데이트). 사진 외 다른 정보는 서버가 그대로 둠.
+        const updated = await Api.updateUser({ uid: me.uid, id: me.id, name: me.name }, file);
+        const merged = Object.assign({}, me, updated || {});   // 응답(UserDTO)의 새 profileURL 반영
+        setCurrentUser(merged);
+        _ownerCache[me.uid] = merged;     // 매물 등록자 카드 캐시도 갱신
+        showSettingsView();
+        showToast('프로필 사진이 변경되었습니다');
+    } catch (err) {
+        showToast('변경 실패: ' + err.message);
+    }
 }
 
 function saveKakaoKey() {

@@ -823,3 +823,69 @@ html.mode-web #modal {
     from { transform: translateY(12px) scale(0.98); opacity: 0; }
     to   { transform: none; opacity: 1; }
 }
+
+/* ============================================================
+   프로필 / 매물 등록자 / 소셜 제공자 배지
+   ============================================================ */
+/* 원형 아바타 — 사진 없으면 이름 첫 글자 */
+.avatar {
+    position: relative; flex-shrink: 0;
+    border-radius: 50%; overflow: hidden;
+    background: var(--blue-light); color: var(--blue);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; line-height: 1;
+}
+.avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.avatar-initial { user-select: none; }
+
+/* 소셜 로그인 제공자 배지 */
+.provider-badge {
+    flex-shrink: 0; display: inline-flex; align-items: center;
+    font-size: 11px; font-weight: 700; line-height: 1;
+    padding: 4px 9px; border-radius: 999px; letter-spacing: 0.2px;
+}
+
+/* 매물 상세 — 등록자 카드 (커뮤니티 스타일) */
+.owner-card {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px; margin-bottom: 14px;
+    background: var(--gray-50); border: 1px solid var(--gray-200);
+    border-radius: var(--radius-md);
+}
+.owner-card-label { font-size: 11px; font-weight: 600; color: var(--gray-500); }
+.owner-card-name {
+    font-size: 15px; font-weight: 700; color: var(--gray-900); margin-top: 2px;
+    display: flex; align-items: center; gap: 6px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.owner-you {
+    flex-shrink: 0; font-size: 10px; font-weight: 700; color: var(--blue);
+    background: var(--blue-light); padding: 1px 7px; border-radius: 999px;
+}
+
+/* 설정 → 내 프로필 화면 */
+.profile-page {
+    display: flex; flex-direction: column; align-items: center;
+    text-align: center; padding: 8px 4px 4px;
+}
+.profile-provider {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; color: var(--gray-500); margin-bottom: 18px;
+}
+.profile-page .avatar {
+    box-shadow: 0 6px 18px rgba(17, 24, 39, 0.12);
+    border: 3px solid var(--white);
+}
+.profile-name { font-size: 22px; font-weight: 800; color: var(--gray-900); margin-top: 14px; }
+.profile-sub { font-size: 13px; color: var(--gray-500); margin-top: 4px; }
+.profile-actions {
+    width: 100%; max-width: 320px;
+    display: flex; flex-direction: column; gap: 10px; margin-top: 24px;
+}
+.profile-actions .btn-secondary { width: 100%; }
+.profile-logout {
+    width: 100%; padding: 13px; border-radius: 12px;
+    border: 1px solid var(--red-light); background: var(--white); color: var(--red);
+    font-size: 15px; font-weight: 600; cursor: pointer; font-family: var(--font);
+}
+.profile-logout:active { background: var(--red-light); }
