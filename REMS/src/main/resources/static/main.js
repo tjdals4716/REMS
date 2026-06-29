@@ -966,7 +966,7 @@ function agencyCardHTML(p) {
         : `<span>${escapeHtml(val)}</span>`}
       </div>` : '';
     return `
-      <div style="margin-bottom:12px;padding:12px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;">
+      <div style="margin-bottom:12px;padding:12px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;text-align:left;">
         <div style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:#6b7280;margin-bottom:8px;">
           ${icon('agency',14)} 공인중개사사무소
         </div>
