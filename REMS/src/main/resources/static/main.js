@@ -199,6 +199,44 @@ function escapeHtml(s) {
         ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// [B] edit by smsong - 라인 스타일 SVG 아이콘 (하단 네비와 동일한 stroke 라인 톤)
+// 기본 이모지(✏️🔒📷✕✓👤 등) 대신 사용. currentColor 상속 → 텍스트 색을 그대로 따름.
+const ICON_PATHS = {
+    edit:    '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/>',
+    lock:    '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+    camera:  '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3l2-3h8l2 3h3a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="3.5"/>',
+    check:   '<polyline points="20 6 9 17 4 12"/>',
+    close:   '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
+    plus:    '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+    user:    '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+    back:    '<line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>',
+    pin:     '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>',
+    building:'<rect x="4" y="2" width="16" height="20" rx="2"/><line x1="9" y1="22" x2="9" y2="18"/><line x1="15" y1="22" x2="15" y2="18"/><line x1="8" y1="6" x2="10" y2="6"/><line x1="14" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="10" y2="10"/><line x1="14" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="10" y2="14"/><line x1="14" y1="14" x2="16" y2="14"/>',
+    map:     '<polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/>',
+    agency:  '<path d="M3 9l1.5-5h15L21 9"/><path d="M4 9v11h16V9"/><path d="M9 20v-6h6v6"/><path d="M3 9h18"/>',
+    phone:   '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2 4.2 2 2 0 0 1 4 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7A2 2 0 0 1 22 16.9z"/>',
+    // 건물 유형 아이콘 (단독&다중 / 다세대 / 오피스텔 / 상가)
+    house:      '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>',
+    multiplex:  '<path d="M3 21V9l5-4 5 4v12"/><path d="M13 21V11l4-3 4 3v10"/><path d="M6 13h1.5M6 16.5h1.5M9.5 13h1.5M9.5 16.5h1.5"/>',
+    officetel:  '<rect x="6" y="3" width="12" height="18" rx="1.5"/><path d="M9 7h2M13 7h2M9 11h2M13 11h2M9 15h2M13 15h2"/>',
+    commercial: '<path d="M4 9l1.2-4h13.6L20 9"/><path d="M5 9v11h14V9"/><path d="M3.5 9h17"/><path d="M9.5 20v-5h5v5"/>'
+};
+// icon(name, size, extraStyle) → inline SVG 문자열
+function icon(name, size, extraStyle) {
+    const sz = size || 16;
+    const sw = sz <= 18 ? 2 : 1.8;
+    return `<svg class="ic ic-${name}" width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="none" `
+        + `stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" `
+        + `style="vertical-align:middle;flex-shrink:0;${extraStyle || ''}" aria-hidden="true">${ICON_PATHS[name] || ''}</svg>`;
+}
+// 건물 유형 → 라인 아이콘 (기본 이모지 대체)
+const TYPE_ICON_NAME = { house: 'house', multiplex: 'multiplex', officetel: 'officetel', commercial: 'commercial' };
+function typeIcon(type, size, color) {
+    return `<span style="display:inline-flex;align-items:center;color:${color || '#1a56db'};">`
+        + icon(TYPE_ICON_NAME[type] || 'building', size || 22) + `</span>`;
+}
+// [E] edit by smsong
+
 // 소셜 로그인 제공자 → 표시 정보(라벨/색상)
 function providerInfo(p) {
     switch (String(p || '').toLowerCase()) {
@@ -220,21 +258,49 @@ function providerLoginText(p) {
 function avatarHTML(profile, sizePx) {
     const url = profile && profile.profileURL ? profile.profileURL : '';
     const name = (profile && (profile.name || profile.nickname)) || '';
-    const initial = name ? name.trim().charAt(0) : '👤';
+    // [B] edit by smsong - 이름이 없으면 기본 이모지(👤) 대신 라인 SVG 유저 아이콘 사용
+    const initial = name ? escapeHtml(name.trim().charAt(0)) : icon('user', Math.round((sizePx || 40) * 0.5));
+    // [E] edit by smsong
     const sz = sizePx || 40;
     return `<div class="avatar" style="width:${sz}px;height:${sz}px;font-size:${Math.round(sz * 0.42)}px;">
-        <span class="avatar-initial">${escapeHtml(initial)}</span>
+        <span class="avatar-initial">${initial}</span>
         ${url ? `<img src="${escapeHtml(url)}" alt="" onerror="this.remove()">` : ''}
     </div>`;
 }
 
-// 매물 등록자 프로필 캐시 (uid -> {name, profileURL, provider})
+// 매물 등록자 프로필 캐시 (uid -> {name, profileURL, provider, agency...})
 const _ownerCache = {};
-async function fetchOwnerProfile(uid) {
+
+// [B] edit by smsong - 소유자 식별자 추출/비교 견고화
+// 백엔드가 등록자 식별자를 어떤 필드명(ownerUid/uid/ownerId/writerUid/owner/user_id)으로,
+// 또 uid(문자열) 혹은 id(숫자) 중 무엇으로 내려도 "내 매물"을 올바르게 판별하도록 함.
+function ownerIdOf(obj) {
+    if (!obj) return '';
+    const v = obj.ownerUid ?? obj.uid ?? obj.userUid ?? obj.ownerId ?? obj.writerUid ?? obj.owner ?? obj.user_id ?? obj.userId;
+    return v == null ? '' : String(v);
+}
+function myIds() {
+    const me = getCurrentUser() || {};
+    return [getUid(), me.uid, me.id, me.userId, me.name]
+        .filter(v => v != null && v !== '')
+        .map(String);
+}
+// 현재 로그인 사용자가 이 오브젝트(건물/호실)의 작성자인지 확인
+function isMine(obj) {
+    const owner = ownerIdOf(obj);
+    if (!owner) return false;
+    return myIds().includes(owner);
+}
+// [E] edit by smsong
+
+async function fetchOwnerProfile(obj) {
+    // [B] edit by smsong - uid 문자열 또는 건물/호실 객체 모두 허용
+    const uid = (obj && typeof obj === 'object') ? ownerIdOf(obj) : (obj || '');
+    // [E] edit by smsong
     if (!uid) return null;
     if (_ownerCache[uid]) return _ownerCache[uid];
     const me = getCurrentUser();
-    if (me && me.uid === uid) { _ownerCache[uid] = me; return me; }   // 본인이면 로컬 정보 사용
+    if (me && myIds().includes(String(uid))) { _ownerCache[uid] = me; return me; }   // 본인이면 로컬 정보 사용
     try {
         const p = await Api.getUserProfile(uid);
         _ownerCache[uid] = p || { uid };
@@ -679,7 +745,7 @@ function showBuildingList() {
     const body = document.getElementById('sheet-body');
     if (state.buildings.length === 0) {
         body.innerHTML = `<div class="empty-state">
-      <div class="empty-state-icon">🏗️</div>
+      <div class="empty-state-icon">${icon('building',56,'color:#9ca3af;')}</div>
       <div class="empty-state-title">등록된 건물이 없습니다</div>
       <div class="empty-state-sub">+ 버튼을 눌러 첫 번째 건물을 추가해보세요</div>
     </div>`;
@@ -689,7 +755,7 @@ function showBuildingList() {
     body.innerHTML = state.buildings.map(b => {
         const s = getUnitStats(b);
         const pct = s.total > 0 ? Math.round((s.occupied / s.total) * 100) : 0;
-        const emoji = TYPE_EMOJI[b.type] || '🏢';
+        const emoji = typeIcon(b.type, 26); // [B/E] edit by smsong - 유형 라인 아이콘(기본 이모지 대체)
         // 실제 오브젝트에 첨부된 첫 번째 이미지를 썸네일로 사용 (없거나 로드 실패 시 타입 이모지)
         const firstImg = (b.mediaURLs && b.mediaURLs.length) ? b.mediaURLs[0] : '';
         const thumb = firstImg
@@ -703,7 +769,7 @@ function showBuildingList() {
         <div style="margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
           ${isMine(b)
             ? '<span style="font-size:10.5px;color:#1a56db;background:#e8f0fe;font-weight:700;padding:1px 7px;border-radius:10px;">내 매물</span>'
-            : (b.ownerUid ? `<span style="font-size:10.5px;color:#6b7280;background:#f3f4f6;font-weight:600;padding:1px 7px;border-radius:10px;">🔒 ${b.ownerUid}</span>` : '')}
+            : (ownerIdOf(b) ? `<span style="display:inline-flex;align-items:center;gap:3px;font-size:10.5px;color:#6b7280;background:#f3f4f6;font-weight:600;padding:1px 7px;border-radius:10px;">${icon('lock',11)} ${ownerNameSpan(b)}</span>` : '')}
           ${s.empty > 0 ? `<span style="font-size:11px;color:#dc2626;font-weight:600;">공실 ${s.empty}</span>` : ''}
           ${s.expiring > 0 ? `<span style="font-size:11px;color:#d97706;font-weight:600;">만기 ${s.expiring}</span>` : ''}
         </div>
@@ -715,14 +781,30 @@ function showBuildingList() {
       </div>
     </div>`;
     }).join('');
+    hydrateOwnerNames(body); // [B/E] edit by smsong - 목록 잠금 배지의 등록자 이름 채우기
 }
 
-// 현재 로그인 사용자가 이 오브젝트(건물/호실)의 작성자인지 확인
-function isMine(obj) {
-    if (!obj) return false;
-    const me = getUid();
-    return !!obj.ownerUid && !!me && obj.ownerUid === me;
+// 현재 로그인 사용자가 이 오브젝트(건물/호실)의 작성자인지 확인 → 위쪽 isMine()으로 통합됨
+
+// [B] edit by smsong - 잠금 라벨의 등록자 표시를 uid가 아닌 name 으로. 이름은 비동기로 채움.
+function ownerNameSpan(obj, fallback) {
+    const oid = ownerIdOf(obj);
+    return `<span class="owner-name-async" data-owner-uid="${escapeHtml(oid)}">${escapeHtml(fallback || '다른 사용자')}</span>`;
 }
+async function hydrateOwnerNames(root) {
+    const scope = root || document;
+    const spans = scope.querySelectorAll('.owner-name-async[data-owner-uid]:not([data-filled])');
+    for (const el of spans) {
+        const oid = el.dataset.ownerUid;
+        el.dataset.filled = '1';
+        if (!oid) continue;
+        try {
+            const p = await fetchOwnerProfile(oid);
+            el.textContent = (p && (p.name || p.nickname)) || '다른 사용자';
+        } catch (_) {}
+    }
+}
+// [E] edit by smsong
 
 function showBuildingDetail(b) {
     const s = getUnitStats(b);
@@ -743,14 +825,17 @@ function showBuildingDetail(b) {
         <div class="owner-card-name">불러오는 중…</div>
       </div>
     </div>
+    <!-- [B] edit by smsong - 공인중개사사무소 정보 (등록자 프로필에서 비동기로 채움) -->
+    <div id="agencycard-${b.id}"></div>
+    <!-- [E] edit by smsong -->
     <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       ${isMine(b) ? `
-      <button onclick="openEditBuilding('${b.id}')" style="padding:7px 14px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;font-size:13px;font-weight:600;color:#374151;cursor:pointer;">✏️ 건물 수정</button>
-      <button onclick="openAddUnit('${b.id}')" style="padding:7px 14px;border-radius:8px;border:none;background:#1a56db;font-size:13px;font-weight:600;color:#fff;cursor:pointer;">+ 호실 추가</button>
+      <button onclick="openEditBuilding('${b.id}')" style="display:inline-flex;align-items:center;gap:5px;padding:7px 14px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;font-size:13px;font-weight:600;color:#374151;cursor:pointer;">${icon('edit',15)} 건물 수정</button>
+      <button onclick="openAddUnit('${b.id}')" style="display:inline-flex;align-items:center;gap:4px;padding:7px 14px;border-radius:8px;border:none;background:#1a56db;font-size:13px;font-weight:600;color:#fff;cursor:pointer;">${icon('plus',15)} 호실 추가</button>
       ` : `
-      <div style="padding:7px 12px;border-radius:8px;background:#f3f4f6;color:#6b7280;font-size:12.5px;font-weight:600;">🔒 ${b.ownerUid || '다른 사용자'}님의 매물 · 조회 전용</div>
+      <div style="display:inline-flex;align-items:center;gap:5px;padding:7px 12px;border-radius:8px;background:#f3f4f6;color:#6b7280;font-size:12.5px;font-weight:600;">${icon('lock',14)} ${ownerNameSpan(b)}님의 매물 · 조회 전용</div>
       `}
-      <button onclick="switchTab('list')" style="padding:7px 14px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;font-size:13px;font-weight:600;color:#6b7280;cursor:pointer;">← 목록</button>
+      <button onclick="switchTab('list')" style="display:inline-flex;align-items:center;gap:4px;padding:7px 14px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;font-size:13px;font-weight:600;color:#6b7280;cursor:pointer;">${icon('back',15)} 목록</button>
     </div>
 
     <!-- 주소 + 상세주소 (바로 옆에) -->
@@ -800,14 +885,17 @@ function showBuildingDetail(b) {
     </div>
   `;
     hydrateOwnerCard(b);
+    hydrateOwnerNames(body); // [B/E] edit by smsong - 조회전용 잠금 라벨 등록자 이름 채우기
 }
 
 // 매물 등록자 카드 채우기 — 등록자 프로필을 비동기로 불러와 이름/사진/제공자 표시
 async function hydrateOwnerCard(b) {
     const el = document.getElementById('ownercard-' + b.id);
     if (!el) return;
-    const p = await fetchOwnerProfile(b.ownerUid);
-    const name = (p && (p.name || p.nickname)) || b.ownerUid || '알 수 없음';
+    // [B] edit by smsong - 등록자 식별을 객체 기반으로, 표시 이름은 name 우선
+    const p = await fetchOwnerProfile(b);
+    const name = (p && (p.name || p.nickname)) || '알 수 없음';
+    // [E] edit by smsong
     const mine = isMine(b);
     el.innerHTML = `
       ${avatarHTML(p, 40)}
@@ -817,7 +905,36 @@ async function hydrateOwnerCard(b) {
       </div>
       ${p && p.provider ? providerBadge(p.provider) : ''}
     `;
+    // [B] edit by smsong - 공인중개사사무소 정보 카드 렌더
+    const agencyEl = document.getElementById('agencycard-' + b.id);
+    if (agencyEl) agencyEl.innerHTML = agencyCardHTML(p);
+    // [E] edit by smsong
 }
+
+// [B] edit by smsong - 공인중개사사무소(이름/전화/주소) 표시 카드. 정보가 하나도 없으면 렌더 안 함.
+function agencyCardHTML(p) {
+    if (!p) return '';
+    const name = p.agencyName, phone = p.agencyPhone, addr = p.agencyAddress;
+    if (!name && !phone && !addr) return '';
+    const row = (ic, val, isTel) => val ? `
+      <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#374151;">
+        <span style="color:#1a56db;display:inline-flex;">${icon(ic, 15)}</span>
+        ${isTel ? `<a href="tel:${escapeHtml(String(val).replace(/[^0-9+]/g,''))}" style="color:#1a56db;text-decoration:none;font-weight:600;">${escapeHtml(val)}</a>`
+                : `<span>${escapeHtml(val)}</span>`}
+      </div>` : '';
+    return `
+      <div style="margin-bottom:12px;padding:12px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;">
+        <div style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:#6b7280;margin-bottom:8px;">
+          ${icon('agency',14)} 공인중개사사무소
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          ${name ? `<div style="font-size:14px;font-weight:700;color:#111827;">${escapeHtml(name)}</div>` : ''}
+          ${row('phone', phone, true)}
+          ${row('pin', addr, false)}
+        </div>
+      </div>`;
+}
+// [E] edit by smsong
 
 // =====================================================
 // MODALS — Building
@@ -837,7 +954,7 @@ function startAddBuilding() {
     addBtn.title = '위치 설정 취소';
     document.getElementById('app').classList.add('picker-active'); // 상단바 숨기고 검색창을 그 자리에
     Sheet.hardClose();                    // 위치 설정 중엔 시트를 완전히 내려 지도를 비움
-    document.getElementById('sheet-body').innerHTML = `<div class="empty-state"><div class="empty-state-icon">📍</div><div class="empty-state-title">지도를 이동하여 위치 설정</div><div class="empty-state-sub">건물 위치를 지도 위에서 직접 설정하세요</div></div>`;
+    document.getElementById('sheet-body').innerHTML = `<div class="empty-state"><div class="empty-state-icon">${icon('pin',56,'color:#9ca3af;')}</div><div class="empty-state-title">지도를 이동하여 위치 설정</div><div class="empty-state-sub">건물 위치를 지도 위에서 직접 설정하세요</div></div>`;
 }
 
 // + 버튼 토글: 활성 상태면 취소, 아니면 위치 설정 시작
@@ -954,7 +1071,7 @@ function renderBfExisting() {
     box.innerHTML = bfKeepUrls.map((u, i) => `
       <div class="bf-thumb">
         <img src="${u}" onerror="this.parentElement.style.display='none'">
-        <button type="button" class="bf-thumb-del" onclick="removeBfImage(${i})">✕</button>
+        <button type="button" class="bf-thumb-del" onclick="removeBfImage(${i})">${icon('close',14)}</button>
       </div>`).join('');
 }
 
@@ -989,7 +1106,7 @@ function renderBfNewPreview() {
     box.innerHTML = bfNewFiles.map((f, i) => `
       <div class="bf-thumb">
         <img src="${URL.createObjectURL(f)}">
-        <button type="button" class="bf-thumb-del" onclick="removeBfNewFile(${i})">✕</button>
+        <button type="button" class="bf-thumb-del" onclick="removeBfNewFile(${i})">${icon('close',14)}</button>
         <span class="bf-thumb-new">NEW</span>
       </div>`).join('');
 }
@@ -1051,7 +1168,7 @@ function openBuildingForm(building, lat, lng, addr) {
     </div>
     ${isEdit ? `
     <div class="form-group">
-      <label class="form-label">현재 사진 <span style="font-weight:400;color:#9ca3af;">(✕ 눌러 제거)</span></label>
+      <label class="form-label">현재 사진 <span style="font-weight:400;color:#9ca3af;">(${icon('close',11)} 눌러 제거)</span></label>
       <div id="bf-existing" class="bf-thumb-wrap"></div>
     </div>` : ''}
     <div class="form-group">
@@ -1169,9 +1286,10 @@ function openUnitDetail(buildingId, unitId) {
     <button class="btn-secondary" onclick="closeModal()">닫기</button>
     ${isMine(u)
         ? `<button class="btn-primary" onclick="openUnitForm('${buildingId}','${unitId}')">수정</button>`
-        : `<span style="font-size:12.5px;color:#9ca3af;align-self:center;padding:0 6px;">🔒 ${u.ownerUid || '다른 사용자'}님이 등록한 호실</span>`}
+        : `<span style="display:inline-flex;align-items:center;gap:4px;font-size:12.5px;color:#9ca3af;align-self:center;padding:0 6px;">${icon('lock',13)} ${ownerNameSpan(u)}님이 등록한 호실</span>`}
   `;
     showModal();
+    hydrateOwnerNames(document.getElementById('modal')); // [B/E] edit by smsong
 }
 
 function switchUnitTab(tab) {
@@ -1433,7 +1551,7 @@ function showStatsView() {
         return `<div style="padding:12px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;margin-bottom:8px;cursor:pointer;" onclick="selectBuilding('${b.id}');switchTab('map')">
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <div>
-            <div style="font-size:14px;font-weight:700;color:#111;">${TYPE_EMOJI[b.type]} ${b.name}</div>
+            <div style="display:flex;align-items:center;gap:6px;font-size:14px;font-weight:700;color:#111;">${typeIcon(b.type,16)} ${b.name}</div>
             <div style="font-size:12px;color:#6b7280;margin-top:2px;">${s.total}호 중 임차 ${s.occupied}호 · 공실 ${s.empty}호</div>
           </div>
           <div style="text-align:right;">
@@ -1468,14 +1586,80 @@ function showSettingsView() {
       <div class="profile-name">${escapeHtml(name)}</div>
       ${me.email ? `<div class="profile-sub">${escapeHtml(me.email)}</div>` : ''}
 
+      <!-- [B] edit by smsong - 내 공인중개사사무소 정보 요약 -->
+      ${agencyCardHTML(me) || `<div style="margin:6px 0 2px;font-size:12.5px;color:#9ca3af;">공인중개사사무소 정보가 없습니다. ‘내 정보 수정’에서 등록하세요.</div>`}
+      <!-- [E] edit by smsong -->
+
       <input type="file" id="profile-file" accept="image/*" style="display:none" onchange="changeProfilePhoto(event)">
       <div class="profile-actions">
-        <button class="btn-secondary" onclick="document.getElementById('profile-file').click()">📷 프로필 사진 변경</button>
+        <button class="btn-secondary" onclick="document.getElementById('profile-file').click()" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;">${icon('camera',16)} 프로필 사진 변경</button>
+        <button class="btn-secondary" onclick="openProfileEdit()" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;">${icon('edit',16)} 내 정보 수정</button>
         <button class="profile-logout" onclick="confirmLogout()">로그아웃</button>
       </div>
     </div>
   `;
 }
+
+// [B] edit by smsong - 회원정보 수정 모달 (이름/닉네임/이메일/휴대폰/주소 + 공인중개사사무소 이름/전화/주소)
+function openProfileEdit() {
+    const me = getCurrentUser() || {};
+    const field = (id, label, val, ph, type) => `
+      <div style="margin-bottom:12px;">
+        <label class="form-label" for="${id}">${label}</label>
+        <input id="${id}" type="${type || 'text'}" class="form-input" value="${escapeHtml(val || '')}" placeholder="${escapeHtml(ph || '')}" autocomplete="off">
+      </div>`;
+    document.getElementById('modal-title').textContent = '내 정보 수정';
+    document.getElementById('modal-body').innerHTML = `
+      ${field('pe-name', '이름', me.name, '실명')}
+      ${field('pe-nickname', '닉네임', me.nickname, '닉네임')}
+      ${field('pe-email', '이메일', me.email, 'example@email.com', 'email')}
+      ${field('pe-phone', '휴대폰', me.phone, '010-0000-0000', 'tel')}
+      ${field('pe-address', '주소', me.address, '주소')}
+      <div style="display:flex;align-items:center;gap:6px;margin:18px 0 10px;font-size:13px;font-weight:800;color:#1a56db;">
+        ${icon('agency',16)} 공인중개사사무소 정보
+      </div>
+      ${field('pe-agency-name', '사무소 이름', me.agencyName, '○○공인중개사사무소')}
+      ${field('pe-agency-phone', '사무소 전화번호', me.agencyPhone, '02-000-0000', 'tel')}
+      ${field('pe-agency-address', '사무소 주소', me.agencyAddress, '사무소 주소')}
+    `;
+    document.getElementById('modal-footer').innerHTML = `
+      <button class="btn-secondary" onclick="closeModal()">취소</button>
+      <button class="btn-primary" onclick="saveProfileEdit()">저장</button>
+    `;
+    showModal();
+}
+
+async function saveProfileEdit() {
+    const me = getCurrentUser();
+    if (!me || !me.uid) { showToast('로그인 정보를 찾을 수 없습니다'); return; }
+    const v = id => (document.getElementById(id)?.value || '').trim();
+    // uid/id 는 식별/권한용으로 반드시 함께 전송. 나머지는 입력값으로 부분 업데이트.
+    const dto = {
+        uid: me.uid,
+        id: me.id,
+        name: v('pe-name') || me.name,
+        nickname: v('pe-nickname'),
+        email: v('pe-email'),
+        phone: v('pe-phone'),
+        address: v('pe-address'),
+        agencyName: v('pe-agency-name'),
+        agencyPhone: v('pe-agency-phone'),
+        agencyAddress: v('pe-agency-address')
+    };
+    try {
+        showToast('저장 중…');
+        const updated = await Api.updateUser(dto);   // 파일 없이 JSON 부분 업데이트
+        const merged = Object.assign({}, me, updated || dto);
+        setCurrentUser(merged);
+        _ownerCache[me.uid] = merged;
+        closeModal();
+        showSettingsView();
+        showToast('내 정보가 저장되었습니다');
+    } catch (err) {
+        showToast('저장 실패: ' + err.message);
+    }
+}
+// [E] edit by smsong
 
 // 프로필 사진 변경 — 선택한 이미지를 회원수정 API(PUT /user)로 업로드하고 화면/캐시 갱신
 async function changeProfilePhoto(e) {
@@ -1507,7 +1691,7 @@ function exportData() {
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'mybuilding_backup_' + new Date().toISOString().slice(0,10) + '.json';
+    a.download = 'hakbangnote_backup_' + new Date().toISOString().slice(0,10) + '.json';
     a.click();
 }
 
@@ -2045,7 +2229,7 @@ async function showMapFallback() {
     if (!requireAuthOrRedirect()) return;
     document.getElementById('map').innerHTML = `
     <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;background:#f9fafb;padding:30px;text-align:center;">
-      <div style="font-size:48px;margin-bottom:16px;">🗺️</div>
+      <div style="margin-bottom:16px;color:#9ca3af;">${icon('map',48,'color:#9ca3af;')}</div>
       <div style="font-size:16px;font-weight:700;color:#374151;margin-bottom:8px;">네이버 지도 API 키가 필요합니다</div>
       <div style="font-size:13px;color:#6b7280;margin-bottom:20px;line-height:1.6;">
         1. ncloud.com (네이버 클라우드 플랫폼) 접속<br>

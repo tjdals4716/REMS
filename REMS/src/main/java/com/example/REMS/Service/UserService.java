@@ -151,6 +151,11 @@ public class UserService {
         if (userDTO.getPhone() != null) userEntity.setPhone(userDTO.getPhone());
         if (userDTO.getAddress() != null) userEntity.setAddress(userDTO.getAddress());
         if (userDTO.getGender() != null) userEntity.setGender(userDTO.getGender());
+        // [B] edit by smsong - 공인중개사사무소 정보 부분 업데이트(전달된 값만 갱신)
+        if (userDTO.getAgencyName() != null) userEntity.setAgencyName(userDTO.getAgencyName());
+        if (userDTO.getAgencyPhone() != null) userEntity.setAgencyPhone(userDTO.getAgencyPhone());
+        if (userDTO.getAgencyAddress() != null) userEntity.setAgencyAddress(userDTO.getAgencyAddress());
+        // [E] edit by smsong
         userEntity.setAge(userDTO.getAge());
 
         // ★ 핵심 수정: 새 이미지가 있을 때만 프로필 교체. 없으면 기존 프로필 URL 유지.
@@ -225,6 +230,11 @@ public class UserService {
         card.put("nickname", userEntity.getNickname());
         card.put("profileURL", userEntity.getProfileURL());
         card.put("provider", userEntity.getProvider());
+        // [B] edit by smsong - 매물 상세에서 공인중개사사무소 정보 표시용으로 공개 프로필에 포함
+        card.put("agencyName", userEntity.getAgencyName());
+        card.put("agencyPhone", userEntity.getAgencyPhone());
+        card.put("agencyAddress", userEntity.getAgencyAddress());
+        // [E] edit by smsong
         return card;
     }
 

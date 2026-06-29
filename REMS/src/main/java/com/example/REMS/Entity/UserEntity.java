@@ -30,6 +30,12 @@ public class UserEntity implements UserDetails {
     private String provider;
     private int likeCount = 0;
 
+    // [B] edit by smsong - 공인중개사사무소 정보(이름/전화번호/주소)
+    private String agencyName;     // 공인중개사사무소 이름
+    private String agencyPhone;    // 공인중개사사무소 전화번호
+    private String agencyAddress;  // 공인중개사사무소 주소
+    // [E] edit by smsong
+
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         // 사용자 권한 설정, 필요에 따라 변경할 것
