@@ -415,14 +415,44 @@ function effectiveStatus(u) {
     return u.status || 'empty';
 }
 
-// 역지오코딩 결과로 "풀주소(지번 포함)"를 만든다.
+// 역지오코딩 v2 응답으로 "풀주소(도로명 + 지번)"를 만든다.
 //  예) "서울특별시 강남구 테헤란로 142 (역삼동 681-1)"
-function buildFullAddress(a) {
-    if (!a) return '';
-    const road = (a.roadAddress || '').trim();
-    const jibun = (a.jibunAddress || '').trim();
+//  · address.roadAddress/jibunAddress 우선, 비어 있으면 results 에서 직접 조합.
+function buildFullAddress(v2) {
+    if (!v2) return '';
+    const a = v2.address || {};
+    let road = (a.roadAddress || '').trim();
+    let jibun = (a.jibunAddress || '').trim();
+
+    if ((!road || !jibun) && Array.isArray(v2.results)) {
+        v2.results.forEach(r => {
+            const composed = composeAddrFromResult(r);
+            if (r.name === 'roadaddr' && !road) road = composed;
+            if (r.name === 'addr' && !jibun) jibun = composed;
+        });
+    }
     if (road && jibun && road !== jibun) return `${road} (${jibun})`;
     return road || jibun || '';
+}
+
+// reverseGeocode results 한 건(region+land)으로 주소 문자열 조합
+function composeAddrFromResult(r) {
+    if (!r) return '';
+    const rg = r.region || {}, land = r.land || {};
+    const region = [rg.area1, rg.area2, rg.area3, rg.area4]
+        .map(x => x && x.name).filter(Boolean).join(' ');
+    const num = land.number1
+        ? land.number1 + (land.number2 && land.number2 !== '0' ? '-' + land.number2 : '')
+        : '';
+    if (r.name === 'roadaddr') {
+        // 도로명: 시/도 구 + 도로명(land.name) + 건물번호
+        const head = [rg.area1, rg.area2].map(x => x && x.name).filter(Boolean).join(' ');
+        let s = [head, land.name, num].filter(Boolean).join(' ').trim();
+        if (land.addition0 && land.addition0.value) s += ' (' + land.addition0.value + ')'; // 건물명
+        return s;
+    }
+    // 지번
+    return [region, num].filter(Boolean).join(' ').trim();
 }
 
 async function initMap() {
@@ -472,7 +502,7 @@ async function initMap() {
     // 현재 위치 추적 시작(파란 점). iOS가 아니면 나침반도 바로 연결
     startGeolocationTracking();
     if (!(typeof DeviceOrientationEvent !== 'undefined' &&
-          typeof DeviceOrientationEvent.requestPermission === 'function')) {
+        typeof DeviceOrientationEvent.requestPermission === 'function')) {
         ensureOrientationPermission();
     }
 
@@ -498,13 +528,13 @@ function gotoMyLocation() {
 function centerOnCurrentLocationOnce() {
     if (!navigator.geolocation || !map) return;
     navigator.geolocation.getCurrentPosition(pos => {
-        if (_suppressAutoCenter) return;     // 그 사이 사용자가 지도를 조작했으면 중단
-        const latlng = new naver.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
-        updateGeoMarker(latlng, pos.coords.heading);
-        map.setCenter(latlng);
-        map.setZoom(16);
-    }, () => { /* 거부/실패 → 기본 서울 중심 유지 */ },
-       { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
+            if (_suppressAutoCenter) return;     // 그 사이 사용자가 지도를 조작했으면 중단
+            const latlng = new naver.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
+            updateGeoMarker(latlng, pos.coords.heading);
+            map.setCenter(latlng);
+            map.setZoom(16);
+        }, () => { /* 거부/실패 → 기본 서울 중심 유지 */ },
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
 }
 
 // =====================================================
@@ -1283,7 +1313,7 @@ function agencyCardHTML(p) {
       <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#374151;">
         <span style="color:#1a56db;display:inline-flex;">${icon(ic, 15)}</span>
         ${isTel ? `<a href="tel:${escapeHtml(String(val).replace(/[^0-9+]/g,''))}" style="color:#1a56db;text-decoration:none;font-weight:600;">${escapeHtml(val)}</a>`
-                : `<span>${escapeHtml(val)}</span>`}
+        : `<span>${escapeHtml(val)}</span>`}
       </div>` : '';
     return `
       <div style="margin-bottom:12px;padding:12px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;text-align:left;">
@@ -1360,13 +1390,19 @@ function confirmPickerLocation() {
     document.getElementById('app').classList.remove('chrome-hidden');
 
     // 네이버 Reverse Geocoding 호출
+    //  · orders 를 지정하지 않으면 행정구역 코드만 와서 지번/도로명이 비어버린다.
+    //    → 도로명(roadaddr) + 지번(addr) 을 명시해 풀주소를 받는다.
     naver.maps.Service.reverseGeocode({
         coords: center,
+        orders: [
+            naver.maps.Service.OrderType.ROAD_ADDR,
+            naver.maps.Service.OrderType.ADDR
+        ].join(',')
     }, function(status, response) {
         let addr = '';
         if (status === naver.maps.Service.Status.OK) {
             // 풀주소(도로명 + 지번)로 저장 — 예: "서울특별시 강남구 테헤란로 142 (역삼동 681-1)"
-            addr = buildFullAddress(response.v2.address);
+            addr = buildFullAddress(response.v2);
         }
         // 좌표를 전달할 때 네이버는 .lat() .lng() 함수를 사용합니다.
         openBuildingForm(null, center.lat(), center.lng(), addr);
