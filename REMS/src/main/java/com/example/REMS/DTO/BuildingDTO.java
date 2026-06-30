@@ -48,6 +48,9 @@ public class BuildingDTO {
     private Boolean parkingAvailable;
     private Boolean petAllowed;
 
+    // 등록 일시(epoch millis). 응답 표시용(읽기 전용) — 프론트에서 날짜만 표시.
+    private Long createdAt;
+
     public static BuildingDTO entityToDto(BuildingEntity buildingEntity) {
         List<UnitDTO> unitDTOs = buildingEntity.getUnits().stream()
                 .map(UnitDTO::entityToDto)
@@ -60,6 +63,10 @@ public class BuildingDTO {
 
         Long deletedAtMillis = (buildingEntity.getDeletedAt() != null)
                 ? buildingEntity.getDeletedAt().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+                : null;
+
+        Long createdAtMillis = (buildingEntity.getCreatedAt() != null)
+                ? buildingEntity.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
                 : null;
 
         return new BuildingDTO(
@@ -82,7 +89,8 @@ public class BuildingDTO {
                 buildingEntity.getJeonseLoanAvailable(),
                 buildingEntity.getJeonseLoanType(),
                 buildingEntity.getParkingAvailable(),
-                buildingEntity.getPetAllowed());
+                buildingEntity.getPetAllowed(),
+                createdAtMillis);
     }
 
     public BuildingEntity dtoToEntity(UserEntity owner) {

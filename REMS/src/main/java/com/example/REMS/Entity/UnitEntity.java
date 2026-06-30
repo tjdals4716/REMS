@@ -4,6 +4,9 @@ import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
+
+import java.time.LocalDateTime;
 
 @Entity(name = "units")
 @NoArgsConstructor
@@ -25,6 +28,11 @@ public class UnitEntity {
     private int rent;           // 월세 (만원)
     private int manage;         // 관리비 (만원)
     private String dealType;    // 거래유형 (sale=매매 / jeonse=전세 / monthly=월세)
+
+    // 등록 일시 — 최초 저장 시 자동 기록(이후 수정에도 변경 안 됨)
+    @CreationTimestamp
+    @Column(updatable = false)
+    private LocalDateTime createdAt;
     private String contractStart;   // 계약 시작 (yyyy-MM-dd)
     private String contractEnd;     // 계약 만료 (yyyy-MM-dd)
 

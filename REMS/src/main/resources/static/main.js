@@ -472,7 +472,7 @@ async function initMap() {
     // 현재 위치 추적 시작(파란 점). iOS가 아니면 나침반도 바로 연결
     startGeolocationTracking();
     if (!(typeof DeviceOrientationEvent !== 'undefined' &&
-        typeof DeviceOrientationEvent.requestPermission === 'function')) {
+          typeof DeviceOrientationEvent.requestPermission === 'function')) {
         ensureOrientationPermission();
     }
 
@@ -498,13 +498,13 @@ function gotoMyLocation() {
 function centerOnCurrentLocationOnce() {
     if (!navigator.geolocation || !map) return;
     navigator.geolocation.getCurrentPosition(pos => {
-            if (_suppressAutoCenter) return;     // 그 사이 사용자가 지도를 조작했으면 중단
-            const latlng = new naver.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
-            updateGeoMarker(latlng, pos.coords.heading);
-            map.setCenter(latlng);
-            map.setZoom(16);
-        }, () => { /* 거부/실패 → 기본 서울 중심 유지 */ },
-        { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
+        if (_suppressAutoCenter) return;     // 그 사이 사용자가 지도를 조작했으면 중단
+        const latlng = new naver.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
+        updateGeoMarker(latlng, pos.coords.heading);
+        map.setCenter(latlng);
+        map.setZoom(16);
+    }, () => { /* 거부/실패 → 기본 서울 중심 유지 */ },
+       { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
 }
 
 // =====================================================
@@ -602,6 +602,17 @@ function formatEok(manwon) {
         return (Number.isInteger(eok) ? String(eok) : eok.toFixed(1)) + '억';
     }
     return manwon.toLocaleString() + '만';        // 1억 미만 → 만원 그대로
+}
+
+// 등록일 표시 — DB의 datetime을 받아 날짜만 (YYYY.MM.DD)
+function formatDate(ms) {
+    if (!ms) return '';
+    const d = new Date(ms);
+    if (isNaN(d)) return '';
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${y}.${m}.${dd}`;
 }
 
 // 마커/요약용 가격 라벨. 거래유형에 따라 "매매 16억" / "전세 2.4억" / "월세 2.4억/50".
@@ -1131,6 +1142,7 @@ function showBuildingDetail(b) {
       <span style="font-size:14px;font-weight:600;color:#111827;">${b.address || '-'}</span>
       <span style="margin-left:auto;font-size:11px;font-weight:700;color:#1a56db;background:#e8f0fe;padding:2px 8px;border-radius:10px;flex-shrink:0;">${TYPE_LABEL[b.type] || ''}</span>
     </div>
+    ${b.createdAt ? `<div style="font-size:11.5px;color:#9ca3af;margin:-6px 0 12px 2px;">등록일 ${formatDate(b.createdAt)}</div>` : ''}
 
     <!-- 대표 거래유형 + 금액 -->
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
@@ -1271,7 +1283,7 @@ function agencyCardHTML(p) {
       <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#374151;">
         <span style="color:#1a56db;display:inline-flex;">${icon(ic, 15)}</span>
         ${isTel ? `<a href="tel:${escapeHtml(String(val).replace(/[^0-9+]/g,''))}" style="color:#1a56db;text-decoration:none;font-weight:600;">${escapeHtml(val)}</a>`
-        : `<span>${escapeHtml(val)}</span>`}
+                : `<span>${escapeHtml(val)}</span>`}
       </div>` : '';
     return `
       <div style="margin-bottom:12px;padding:12px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;text-align:left;">
@@ -1708,6 +1720,7 @@ function renderUnitTab(tab) {
         <div class="info-card"><div class="info-card-label">유형</div><div class="info-card-value">${TYPE_LABEL[u.type] || {residential:'주거용',office:'사무용'}[u.type] || u.type}</div></div>
         <div class="info-card"><div class="info-card-label">거래</div><div class="info-card-value">${DEAL_LABEL[inferDeal(u)]}</div></div>
       </div>
+      ${u.createdAt ? `<div style="font-size:11.5px;color:#9ca3af;margin-top:10px;">등록일 ${formatDate(u.createdAt)}</div>` : ''}
     `;
     } else if (tab === 'contract') {
         const d = inferDeal(u);

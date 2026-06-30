@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -43,6 +44,11 @@ public class BuildingEntity {
     // 옵션 — 주차 / 애완
     private Boolean parkingAvailable;
     private Boolean petAllowed;
+
+    // 등록 일시 — 최초 저장 시 자동 기록(이후 수정에도 변경 안 됨)
+    @CreationTimestamp
+    @Column(updatable = false)
+    private LocalDateTime createdAt;
 
     @Column(length = 1000)
     private String memo;            // 메모 (UI에서는 숨김, 데이터는 보존)

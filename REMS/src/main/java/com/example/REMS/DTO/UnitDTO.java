@@ -27,6 +27,9 @@ public class UnitDTO {
     private String memo;
     private String dealType;    // 거래유형 (sale=매매 / jeonse=전세 / monthly=월세)
 
+    // 등록 일시(epoch millis). 응답 표시용(읽기 전용).
+    private Long createdAt;
+
     public static UnitDTO entityToDto(UnitEntity unitEntity) {
         return new UnitDTO(
                 unitEntity.getId(),
@@ -44,7 +47,10 @@ public class UnitDTO {
                 unitEntity.getContractStart(),
                 unitEntity.getContractEnd(),
                 unitEntity.getMemo(),
-                unitEntity.getDealType());
+                unitEntity.getDealType(),
+                unitEntity.getCreatedAt() != null
+                        ? unitEntity.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+                        : null);
     }
 
     // 작성자(owner)를 지정하여 엔티티로 변환
