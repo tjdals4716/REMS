@@ -36,6 +36,30 @@ public class BuildingService {
     private static final int TRASH_RETENTION_DAYS = 30;  // 휴지통 보관 기간(일). 경과 시 자동 영구 삭제
     private final BuildingRepository buildingRepository;
     private final UserRepository userRepository;
+    private final com.example.REMS.Repository.UserPermissionRepository userPermissionRepository;
+
+    private static final String ADMIN_UID = "3635939452";
+
+    // 권한 체크 — 관리자는 통과, 그 외에는 저장된 권한 플래그로 판단.
+    //  action: "CREATE" / "UPDATE" / "DELETE"  (조회 차단은 프론트에서 처리)
+    private void requirePermission(String uid, String action) {
+        if (ADMIN_UID.equals(uid)) return;
+        com.example.REMS.Entity.UserPermissionEntity perm =
+                userPermissionRepository.findByUser_Uid(uid).orElse(null);
+        boolean allowed;
+        if (perm == null) {
+            allowed = false;   // 권한 레코드 없으면 쓰기 금지 (조회는 별도)
+        } else if ("CREATE".equals(action)) {
+            allowed = Boolean.TRUE.equals(perm.getCanCreate());
+        } else if ("UPDATE".equals(action)) {
+            allowed = Boolean.TRUE.equals(perm.getCanUpdate());
+        } else if ("DELETE".equals(action)) {
+            allowed = Boolean.TRUE.equals(perm.getCanDelete());
+        } else {
+            allowed = false;
+        }
+        if (!allowed) throw new RuntimeException("해당 작업 권한이 없습니다 (" + action + ")");
+    }
 
     // GCS 업로드용 (PostService와 동일한 방식)
     private final Storage storage;
@@ -123,6 +147,7 @@ public class BuildingService {
     @Transactional
     public BuildingDTO createBuilding(String uid, BuildingDTO buildingDTO, List<MultipartFile> mediaFiles, UserDetails userDetails) {
         UserEntity owner = getAuthorizedUser(uid, userDetails);
+        requirePermission(uid, "CREATE");
 
         // 장수 제한 검사 (업로드 전에 차단)
         if (countFiles(mediaFiles) > MAX_IMAGES) {
@@ -195,6 +220,7 @@ public class BuildingService {
         BuildingEntity buildingEntity = buildingRepository.findById(buildingDTO.getId())
                 .orElseThrow(() -> new IllegalArgumentException("건물을 찾을 수 없습니다"));
         checkOwner(buildingEntity, uid);
+        requirePermission(uid, "UPDATE");
 
         buildingEntity.setName(buildingDTO.getName());
         buildingEntity.setAddress(buildingDTO.getAddress());
@@ -242,6 +268,7 @@ public class BuildingService {
         BuildingEntity buildingEntity = buildingRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("건물을 찾을 수 없습니다"));
         checkOwner(buildingEntity, uid);
+        requirePermission(uid, "DELETE");
         buildingEntity.setDeletedAt(LocalDateTime.now());   // 휴지통으로 이동
         buildingRepository.save(buildingEntity);
         logger.info("{}번 건물 휴지통 이동! 작성자: {}", id, uid);
@@ -279,6 +306,7 @@ public class BuildingService {
         BuildingEntity buildingEntity = buildingRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("건물을 찾을 수 없습니다"));
         checkOwner(buildingEntity, uid);
+        requirePermission(uid, "DELETE");
         BuildingDTO deleted = BuildingDTO.entityToDto(buildingEntity);
         buildingRepository.delete(buildingEntity);
         logger.info("{}번 건물 영구 삭제! 작성자: {}", id, uid);

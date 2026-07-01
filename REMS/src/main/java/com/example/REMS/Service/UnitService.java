@@ -25,6 +25,29 @@ public class UnitService {
     private final UnitRepository unitRepository;
     private final BuildingRepository buildingRepository;
     private final UserRepository userRepository;
+    private final com.example.REMS.Repository.UserPermissionRepository userPermissionRepository;
+
+    private static final String ADMIN_UID = "3635939452";
+
+    // 권한 체크 — 관리자는 통과, 그 외엔 저장된 플래그로 판단 (CREATE/UPDATE/DELETE)
+    private void requirePermission(String uid, String action) {
+        if (ADMIN_UID.equals(uid)) return;
+        com.example.REMS.Entity.UserPermissionEntity perm =
+                userPermissionRepository.findByUser_Uid(uid).orElse(null);
+        boolean allowed;
+        if (perm == null) {
+            allowed = false;
+        } else if ("CREATE".equals(action)) {
+            allowed = Boolean.TRUE.equals(perm.getCanCreate());
+        } else if ("UPDATE".equals(action)) {
+            allowed = Boolean.TRUE.equals(perm.getCanUpdate());
+        } else if ("DELETE".equals(action)) {
+            allowed = Boolean.TRUE.equals(perm.getCanDelete());
+        } else {
+            allowed = false;
+        }
+        if (!allowed) throw new RuntimeException("해당 작업 권한이 없습니다 (" + action + ")");
+    }
 
     // 로그인 여부만 검증 (조회는 모든 로그인 사용자에게 공개)
     private void checkAuth(String uid, UserDetails userDetails) {
@@ -62,6 +85,7 @@ public class UnitService {
         BuildingEntity building = buildingRepository.findById(buildingId)
                 .orElseThrow(() -> new IllegalArgumentException("건물을 찾을 수 없습니다"));
         checkBuildingOwner(building, uid);
+        requirePermission(uid, "CREATE");
 
         UnitEntity unitEntity = unitDTO.dtoToEntity(owner); // 작성자 지정
         building.addUnit(unitEntity);                       // 양방향 연관관계 설정
@@ -100,6 +124,7 @@ public class UnitService {
         UnitEntity unitEntity = unitRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("호실을 찾을 수 없습니다"));
         checkUnitOwner(unitEntity, uid);
+        requirePermission(uid, "UPDATE");
         unitEntity.setName(unitDTO.getName());
         unitEntity.setFloor(unitDTO.getFloor());
         unitEntity.setType(unitDTO.getType());
@@ -124,6 +149,7 @@ public class UnitService {
         UnitEntity unitEntity = unitRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("호실을 찾을 수 없습니다"));
         checkUnitOwner(unitEntity, uid);
+        requirePermission(uid, "DELETE");
         UnitDTO deleted = UnitDTO.entityToDto(unitEntity);
 
         // 건물 쪽 컬렉션에서도 제거 (orphanRemoval 일관성)

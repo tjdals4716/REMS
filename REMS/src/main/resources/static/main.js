@@ -178,6 +178,14 @@ const Api = {
         return fetch(`${API_BASE_URL}/user`, { method: 'PUT', headers: authHeaders(), body: fd }).then(handleResponse);
     },
 
+    // 권한 (권한 관리 기능)
+    myPermission: () =>
+        fetch(`${API_BASE_URL}/user/permission/${getUid()}`, { headers: authHeaders() }).then(handleResponse),
+    listPermissions: () =>
+        fetch(`${API_BASE_URL}/user/admin/permissions/${getUid()}`, { headers: authHeaders() }).then(handleResponse),
+    updatePermission: (targetId, dto) =>
+        fetch(`${API_BASE_URL}/user/admin/permissions/${getUid()}/${targetId}`, { method: 'PUT', headers: authHeaders(true), body: JSON.stringify(dto) }).then(handleResponse),
+
     // 장소 검색 (/api/search/place) — 네이버 지역검색 프록시. 지도 중심(lat/lng)을 주면 가까운 순으로 정렬됨
     searchPlace: (query, lat, lng) => {
         let qs = `query=${encodeURIComponent(query)}`;
@@ -198,6 +206,36 @@ function getCurrentUser() {
 }
 function setCurrentUser(u) {
     try { localStorage.setItem('currentUser', JSON.stringify(u)); } catch (_) {}
+}
+
+// =====================================================
+// 권한 (생성/조회/수정/삭제) — 관리자 uid 고정, 그 외는 서버에서 받은 권한으로 게이팅
+// =====================================================
+const ADMIN_UID = '3635939452';
+let _myPerms = null;   // { admin, canCreate, canRead, canUpdate, canDelete }
+
+function isAdminUser() {
+    const u = getCurrentUser();
+    return !!(u && u.uid === ADMIN_UID);
+}
+// 현재 로그인 유저의 유효 권한. 관리자는 항상 전체 허용. 로드 전 기본값은 조회만 허용.
+function myPerms() {
+    if (isAdminUser()) return { admin: true, canCreate: true, canRead: true, canUpdate: true, canDelete: true };
+    if (_myPerms) return _myPerms;
+    return { admin: false, canCreate: false, canRead: true, canUpdate: false, canDelete: false };
+}
+async function loadMyPermission() {
+    const u = getCurrentUser();
+    if (!u || !u.uid) { _myPerms = null; return; }
+    if (u.uid === ADMIN_UID) { _myPerms = { admin: true, canCreate: true, canRead: true, canUpdate: true, canDelete: true }; return; }
+    try { _myPerms = await Api.myPermission(); } catch (_) { /* 실패 시 기본값 유지 */ }
+}
+
+// 권한에 따라 전역 UI(건물 추가 버튼 등) 반영
+function applyPermUI() {
+    const p = myPerms();
+    const add = document.getElementById('add-btn-float');
+    if (add) add.style.display = p.canCreate ? '' : 'none';
 }
 
 // HTML/속성 이스케이프 (이름에 <, ", & 등이 들어가도 마크업이 깨지지 않게)
@@ -338,6 +376,7 @@ async function fetchOwnerProfile(obj) {
 
 // 서버에서 전체 건물(+호실)을 불러와 state에 저장
 async function loadData(isInitial) {
+    if (isInitial) { try { await loadMyPermission(); } catch (_) {} }   // 내 권한 먼저 로드(버튼 게이팅용)
     try {
         const buildings = await Api.getBuildings();
         // 백엔드 id(Long) -> 문자열로 정규화 (기존 '=== id' 비교 로직 그대로 동작)
@@ -491,6 +530,7 @@ async function initMap() {
     renderMarkers();
     updateStats();
     showBuildingList();
+    applyPermUI();
     showSheet('');
 
     // Zoom controls (네이버는 숫자가 클수록 확대됩니다. 카카오와 반대)
@@ -654,7 +694,7 @@ function formatPriceLabel(b) {
     const rent = b.rent || 0;
     const depStr = formatEok(dep);
     if (deal === 'sale')   return depStr ? `매매 ${depStr}` : '';
-    if (deal === 'jeonse') return depStr ? `전세 ${depStr}` : '';
+    if (deal === 'jeonse') return depStr ? (rent > 0 ? `전세 ${depStr}/${rent}` : `전세 ${depStr}`) : '';
     // monthly
     if (rent > 0) return depStr ? `월세 ${depStr}/${rent}` : `월세 ${rent}`;
     return depStr ? `전세 ${depStr}` : '';   // 월세인데 월세액이 0이면 사실상 전세로 표기
@@ -673,7 +713,7 @@ function formatMarkerPrice(b) {
     const dep = b.deposit || 0, rent = b.rent || 0;
     const depStr = formatEok(dep);
     if (deal === 'sale')   return depStr ? `매 ${depStr}` : '매';
-    if (deal === 'jeonse') return depStr ? `전 ${depStr}` : '전';
+    if (deal === 'jeonse') return depStr ? (rent > 0 ? `전 ${depStr}/${rent}` : `전 ${depStr}`) : '전';
     // monthly
     if (rent > 0) return depStr ? `월 ${depStr}/${rent}` : `월 ${rent}`;
     return depStr ? `전 ${depStr}` : '';   // 월세인데 월세액이 0이면 사실상 전세
@@ -806,6 +846,7 @@ function renderMarkers() {
     overlays = [];
     clusterGroups = {};
     if (!map) return;
+    if (!myPerms().canRead) { applyPermUI(); return; }   // 조회 권한 없으면 마커 표시 안 함
 
     const visible = state.buildings.filter(matchesFilter);
     const clusters = clusterBuildings(visible);
@@ -880,6 +921,7 @@ function getUnitStats(b) {
 }
 
 function selectBuilding(id) {
+    if (!myPerms().canRead) { showToast('조회 권한이 없습니다'); return; }
     currentBuilding = state.buildings.find(b => b.id === id);
     if (!currentBuilding) return;
 
@@ -1056,6 +1098,15 @@ function closeSheet() {
 }
 
 function showBuildingList() {
+    if (!myPerms().canRead) {
+        document.getElementById('sheet-title').textContent = '조회 권한 없음';
+        document.getElementById('sheet-subtitle').textContent = '관리자에게 조회 권한을 요청하세요';
+        document.getElementById('sheet-body').innerHTML =
+            `<div class="empty-state"><div class="empty-state-icon">${icon('lock',56,'color:#9ca3af;')}</div>` +
+            `<div class="empty-state-title">조회 권한이 없습니다</div>` +
+            `<div class="empty-state-sub">관리자가 조회 권한을 켜면 목록이 표시됩니다</div></div>`;
+        return;
+    }
     const list = state.buildings.filter(matchesFilter);
     const dealName = DEAL_LABEL[activeFilter];
     document.getElementById('sheet-title').textContent = dealName ? `${dealName} 매물` : '내 건물 목록';
@@ -1158,8 +1209,8 @@ function showBuildingDetail(b) {
     </div>
     <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       ${isMine(b) ? `
-      <button onclick="openEditBuilding('${b.id}')" style="display:inline-flex;align-items:center;gap:5px;padding:7px 14px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;font-size:13px;font-weight:600;color:#374151;cursor:pointer;">${icon('edit',15)} 건물 수정</button>
-      <button onclick="openAddUnit('${b.id}')" style="display:inline-flex;align-items:center;gap:4px;padding:7px 14px;border-radius:8px;border:none;background:#1a56db;font-size:13px;font-weight:600;color:#fff;cursor:pointer;">${icon('plus',15)} 호실 추가</button>
+      ${myPerms().canUpdate ? `<button onclick="openEditBuilding('${b.id}')" style="display:inline-flex;align-items:center;gap:5px;padding:7px 14px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;font-size:13px;font-weight:600;color:#374151;cursor:pointer;">${icon('edit',15)} 건물 수정</button>` : ''}
+      ${myPerms().canCreate ? `<button onclick="openAddUnit('${b.id}')" style="display:inline-flex;align-items:center;gap:4px;padding:7px 14px;border-radius:8px;border:none;background:#1a56db;font-size:13px;font-weight:600;color:#fff;cursor:pointer;">${icon('plus',15)} 호실 추가</button>` : ''}
       ` : `
       <div style="display:inline-flex;align-items:center;gap:5px;padding:7px 12px;border-radius:8px;background:#f3f4f6;color:#6b7280;font-size:12.5px;font-weight:600;">${icon('lock',14)} ${ownerNameSpan(b)}님의 매물 · 조회 전용</div>
       `}
@@ -1179,12 +1230,12 @@ function showBuildingDetail(b) {
       ${dealBadge(b, 12)}
       <span style="font-size:15px;font-weight:800;color:#1a56db;letter-spacing:-0.3px;">${formatPriceLabel(b) || '가격 미입력'}</span>
     </div>
-    <div class="building-info-grid" style="grid-template-columns:repeat(${inferDeal(b) === 'monthly' ? 3 : 2},1fr);">
+    <div class="building-info-grid" style="grid-template-columns:repeat(${(inferDeal(b) !== 'sale' && (b.rent || 0) > 0) ? 3 : 2},1fr);">
       <div class="info-card">
         <div class="info-card-label">${inferDeal(b) === 'sale' ? '매매가' : inferDeal(b) === 'jeonse' ? '전세금' : '보증금'}</div>
         <div class="info-card-value">${(b.deposit || 0).toLocaleString()}만원</div>
       </div>
-      ${inferDeal(b) === 'monthly' ? `
+      ${(inferDeal(b) !== 'sale' && (b.rent || 0) > 0) ? `
       <div class="info-card">
         <div class="info-card-label">월세</div>
         <div class="info-card-value">${(b.rent || 0).toLocaleString()}만원</div>
@@ -1636,7 +1687,7 @@ function openBuildingForm(building, lat, lng, addr) {
   `;
 
     document.getElementById('modal-footer').innerHTML = `
-    ${isEdit ? `<button class="btn-danger" onclick="deleteBuilding('${building.id}')">삭제</button>` : ''}
+    ${isEdit && myPerms().canDelete ? `<button class="btn-danger" onclick="deleteBuilding('${building.id}')">삭제</button>` : ''}
     <button class="btn-secondary" onclick="closeModal()">취소</button>
     <button class="btn-primary" onclick="saveBuilding('${isEdit ? building.id : ''}', ${lat||building?.lat}, ${lng||building?.lng})">저장</button>
   `;
@@ -1666,7 +1717,7 @@ async function saveBuilding(id, lat, lng) {
         type: document.getElementById('f-type').value,
         dealType,
         deposit: parseInt(document.getElementById('f-deposit').value) || 0,
-        rent: dealType === 'monthly' ? (parseInt(document.getElementById('f-rent').value) || 0) : 0,
+        rent: dealType === 'sale' ? 0 : (parseInt(document.getElementById('f-rent').value) || 0),
         manage: parseInt(document.getElementById('f-manage').value) || 0,
         jeonseLoanAvailable,
         jeonseLoanType: jeonseLoanAvailable
@@ -1759,7 +1810,7 @@ function openUnitDetail(buildingId, unitId) {
     document.getElementById('modal-footer').innerHTML = `
     <button class="btn-secondary" onclick="closeModal()">닫기</button>
     ${isMine(u)
-        ? `<button class="btn-primary" onclick="openUnitForm('${buildingId}','${unitId}')">수정</button>`
+        ? `${myPerms().canUpdate ? `<button class="btn-primary" onclick="openUnitForm('${buildingId}','${unitId}')">수정</button>` : ''}`
         : `<span style="display:inline-flex;align-items:center;gap:4px;font-size:12.5px;color:#9ca3af;align-self:center;padding:0 6px;">${icon('lock',13)} ${ownerNameSpan(u)}님이 등록한 호실</span>`}
   `;
     showModal();
@@ -1801,7 +1852,7 @@ function renderUnitTab(tab) {
         c.innerHTML = `
       <div class="building-info-grid">
         <div class="info-card"><div class="info-card-label">${d === 'sale' ? '매매가' : d === 'jeonse' ? '전세금' : '보증금'}</div><div class="info-card-value">${u.deposit ? u.deposit.toLocaleString()+'만원' : '—'}</div></div>
-        ${d === 'monthly' ? `<div class="info-card"><div class="info-card-label">월세</div><div class="info-card-value">${u.rent ? u.rent.toLocaleString()+'만원' : '—'}</div></div>` : ''}
+        ${(d !== 'sale' && (u.rent || 0) > 0) ? `<div class="info-card"><div class="info-card-label">월세</div><div class="info-card-value">${u.rent.toLocaleString()}만원</div></div>` : ''}
         <div class="info-card"><div class="info-card-label">관리비</div><div class="info-card-value">${u.manage ? u.manage+'만원' : '—'}</div></div>
         <div class="info-card"><div class="info-card-label">계약기간</div>
           <div class="info-card-value" style="font-size:12px;">${u.contractStart ? u.contractStart+'~'+u.contractEnd : '—'}</div>
@@ -1859,7 +1910,6 @@ function openUnitForm(buildingId, unitId) {
       <div class="status-selector">
         <div class="status-option ${!u || u.status==='empty'?'selected':''}" data-status="empty" onclick="selectStatus('empty')">공실</div>
         <div class="status-option ${u && u.status==='occupied'?'selected':''}" data-status="occupied" onclick="selectStatus('occupied')">임차중</div>
-        <div class="status-option ${u && u.status==='expiring'?'selected':''}" data-status="expiring" onclick="selectStatus('expiring')">만기임박</div>
       </div>
     </div>
 
@@ -1904,7 +1954,7 @@ function openUnitForm(buildingId, unitId) {
   `;
 
     document.getElementById('modal-footer').innerHTML = `
-    ${isEdit ? `<button class="btn-danger" onclick="deleteUnit('${buildingId}','${unitId}')">삭제</button>` : ''}
+    ${isEdit && myPerms().canDelete ? `<button class="btn-danger" onclick="deleteUnit('${buildingId}','${unitId}')">삭제</button>` : ''}
     <button class="btn-secondary" onclick="closeModal()">취소</button>
     <button class="btn-primary" onclick="saveUnit('${buildingId}','${isEdit ? unitId : ''}')">저장</button>
   `;
@@ -1937,7 +1987,7 @@ function selectDeal(scope, code) {
     if (depLabel) depLabel.textContent =
         code === 'sale' ? '매매가 (만원)' : code === 'jeonse' ? '전세금 (만원)' : '보증금 (만원)';
     const rentGroup = document.getElementById(scope + '-rent-group');
-    if (rentGroup) rentGroup.style.display = (code === 'monthly') ? '' : 'none';
+    if (rentGroup) rentGroup.style.display = (code === 'sale') ? 'none' : '';   // 매매만 월세 숨김 (전세·월세는 월세 입력 허용)
 }
 function selectedDeal(scope) {
     return document.querySelector('#' + scope + '-deal-selector .deal-option.selected')?.dataset.deal || 'monthly';
@@ -1957,7 +2007,7 @@ async function saveUnit(buildingId, unitId) {
         type: document.getElementById('uf-type').value,
         tenant: document.getElementById('uf-tenant').value.trim(),
         deposit: parseInt(document.getElementById('uf-deposit').value) || 0,
-        rent: dealType === 'monthly' ? (parseInt(document.getElementById('uf-rent').value) || 0) : 0,
+        rent: dealType === 'sale' ? 0 : (parseInt(document.getElementById('uf-rent').value) || 0),
         manage: parseInt(document.getElementById('uf-manage').value) || 0,
         contractStart: document.getElementById('uf-start').value,
         contractEnd: document.getElementById('uf-end').value,
@@ -2108,9 +2158,71 @@ function showSettingsView() {
         <button class="btn-secondary" onclick="openProfileEdit()" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;">${icon('edit',16)} 내 정보 수정</button>
         <button class="btn-secondary" onclick="openTrash()" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;">${icon('trash',16)} 휴지통</button>
         <button class="profile-logout" onclick="confirmLogout()">로그아웃</button>
+        ${isAdminUser() ? `<button class="btn-secondary" onclick="openPermissionManager()" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;margin-top:4px;">${icon('lock',16)} 권한 관리</button>` : ''}
       </div>
     </div>
   `;
+}
+
+// =====================================================
+// 권한 관리 (관리자 전용) — 유저 목록 + 생성/조회/수정/삭제 토글
+// =====================================================
+async function openPermissionManager() {
+    if (!isAdminUser()) { showToast('관리자만 접근할 수 있습니다'); return; }
+    document.getElementById('modal-title').textContent = '권한 관리';
+    document.getElementById('modal-body').innerHTML =
+        '<div style="padding:28px;text-align:center;color:#9ca3af;font-size:13px;">유저 목록 불러오는 중…</div>';
+    document.getElementById('modal-footer').innerHTML =
+        `<button class="btn-secondary" onclick="closeModal()">닫기</button>`;
+    showModal();
+    try {
+        const list = await Api.listPermissions();
+        renderPermissionList(list || []);
+    } catch (e) {
+        document.getElementById('modal-body').innerHTML =
+            `<div style="padding:24px;text-align:center;color:#dc2626;font-size:13px;">불러오기 실패: ${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function renderPermissionList(list) {
+    const cols = [['canCreate', '생성'], ['canRead', '조회'], ['canUpdate', '수정'], ['canDelete', '삭제']];
+    if (!list.length) {
+        document.getElementById('modal-body').innerHTML =
+            '<div style="padding:24px;text-align:center;color:#9ca3af;">등록된 유저가 없습니다</div>';
+        return;
+    }
+    document.getElementById('modal-body').innerHTML =
+        `<div style="font-size:12px;color:#6b7280;margin-bottom:10px;">각 유저의 생성·조회·수정·삭제 권한을 켜고 <b>저장</b>을 누르세요. (관리자는 항상 전체 허용)</div>` +
+        list.map(u => `
+      <div class="perm-row" data-user-id="${u.userId}">
+        <div class="perm-user">
+          <div class="perm-name">${escapeHtml(u.name || u.nickname || u.uid)}${u.admin ? '<span class="perm-admin">관리자</span>' : ''}</div>
+          <div class="perm-uid">${escapeHtml(u.uid)}</div>
+        </div>
+        <div class="perm-toggles">
+          ${cols.map(([k, label]) =>
+            `<button type="button" class="perm-btn ${u[k] ? 'on' : ''}" data-perm="${k}" ${u.admin ? 'disabled' : ''} onclick="this.classList.toggle('on')">${label}</button>`).join('')}
+        </div>
+        ${u.admin ? '<span class="perm-locked">고정</span>' : `<button class="perm-save" onclick="savePermission(${u.userId}, this)">저장</button>`}
+      </div>`).join('');
+}
+
+async function savePermission(userId, btn) {
+    const row = btn.closest('.perm-row');
+    if (!row) return;
+    const dto = { canCreate: false, canRead: false, canUpdate: false, canDelete: false };
+    row.querySelectorAll('.perm-btn').forEach(b => { dto[b.dataset.perm] = b.classList.contains('on'); });
+    const orig = btn.textContent;
+    btn.textContent = '저장 중…'; btn.disabled = true;
+    try {
+        await Api.updatePermission(userId, dto);
+        showToast('권한을 저장했습니다');
+        btn.textContent = '저장됨';
+        setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1200);
+    } catch (e) {
+        showToast('저장 실패: ' + e.message);
+        btn.textContent = orig; btn.disabled = false;
+    }
 }
 
 // [B] edit by smsong - 회원정보 수정 모달 (이름/닉네임/이메일/휴대폰/주소 + 공인중개사사무소 이름/전화/주소)
@@ -2436,6 +2548,7 @@ function markTab(tab) {
 
 function switchTab(tab) {
     if (pickerMode) cancelMapPicker();   // 다른 탭으로 가면 위치 설정 모드 해제
+    applyPermUI();                       // 권한에 따라 추가 버튼 표시/숨김
 
     if (tab === 'map') {
         markTab('map');

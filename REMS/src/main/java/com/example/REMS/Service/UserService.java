@@ -8,6 +8,7 @@ import com.example.REMS.Config.JWT.JwtTokenProvider;
 import com.example.REMS.Config.OAuthProperties.*;
 import com.example.REMS.DTO.JWTDTO;
 import com.example.REMS.DTO.UserDTO;
+import com.example.REMS.DTO.UserPermissionDTO;
 import com.example.REMS.Entity.*;
 import com.example.REMS.Repository.*;
 import com.google.cloud.storage.BlobId;
@@ -43,6 +44,7 @@ public class UserService {
 
     private static final Logger logger = LoggerFactory.getLogger(UserService.class);
     private final UserRepository userRepository;
+    private final UserPermissionRepository userPermissionRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final RestTemplate restTemplate;
@@ -134,6 +136,101 @@ public class UserService {
         UserEntity userEntity = userRepository.findByUid(uid).orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다"));
         logger.info(uid + " 유저 조회 완료!");
         return UserDTO.entityToDto(userEntity);
+    }
+
+    // =====================================================
+    // 권한 관리 (관리자 전용) — 모든 오브젝트 생성/조회/수정/삭제 허용 여부
+    // =====================================================
+    private static final String ADMIN_UID = "3635939452";   // 관리자 uid (고정)
+
+    public boolean isAdmin(String uid) {
+        return ADMIN_UID.equals(uid);
+    }
+
+    // 권한 엔티티 조회(없으면 기본값으로 생성). 관리자는 항상 전체 허용으로 맞춘다.
+    private UserPermissionEntity getOrCreatePermission(UserEntity user) {
+        UserPermissionEntity perm = userPermissionRepository.findByUser_Id(user.getId()).orElse(null);
+        if (perm == null) {
+            boolean admin = isAdmin(user.getUid());
+            // 중개사(사무소 정보 보유) 기본: 생성/수정/삭제 허용(본인 것만은 소유자 검증으로 별도 보장)
+            // 일반회원 기본: 조회만
+            boolean broker = user.getAgencyName() != null && !user.getAgencyName().trim().isEmpty();
+            perm = UserPermissionEntity.builder()
+                    .user(user)
+                    .canCreate(admin || broker)
+                    .canRead(true)              // 기본: 조회 허용
+                    .canUpdate(admin || broker)
+                    .canDelete(admin || broker)
+                    .build();
+            perm = userPermissionRepository.save(perm);
+        }
+        return perm;
+    }
+
+    private UserPermissionDTO toPermissionDTO(UserEntity user, UserPermissionEntity perm) {
+        boolean admin = isAdmin(user.getUid());
+        return UserPermissionDTO.builder()
+                .userId(user.getId())
+                .uid(user.getUid())
+                .name(user.getName())
+                .nickname(user.getNickname())
+                .profileURL(user.getProfileURL())
+                .admin(admin)
+                // 관리자는 저장값과 무관하게 항상 전체 허용
+                .canCreate(admin || Boolean.TRUE.equals(perm.getCanCreate()))
+                .canRead(admin || Boolean.TRUE.equals(perm.getCanRead()))
+                .canUpdate(admin || Boolean.TRUE.equals(perm.getCanUpdate()))
+                .canDelete(admin || Boolean.TRUE.equals(perm.getCanDelete()))
+                .build();
+    }
+
+    // 로그인한 유저 본인의 권한 조회 (프론트 버튼/조회 게이팅용)
+    @org.springframework.transaction.annotation.Transactional
+    public UserPermissionDTO getMyPermission(String uid, UserDetails userDetails) {
+        if (userDetails == null || !userDetails.getUsername().equals(uid)) {
+            throw new RuntimeException("권한이 없습니다");
+        }
+        UserEntity user = userRepository.findByUid(uid)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다"));
+        return toPermissionDTO(user, getOrCreatePermission(user));
+    }
+
+    // 관리자: 전체 유저 + 권한 목록
+    @org.springframework.transaction.annotation.Transactional
+    public List<UserPermissionDTO> getAllPermissions(String uid, UserDetails userDetails) {
+        if (userDetails == null || !userDetails.getUsername().equals(uid)) {
+            throw new RuntimeException("권한이 없습니다");
+        }
+        if (!isAdmin(uid)) {
+            throw new RuntimeException("관리자만 접근할 수 있습니다");
+        }
+        List<UserPermissionDTO> result = new java.util.ArrayList<>();
+        for (UserEntity user : userRepository.findAll()) {
+            result.add(toPermissionDTO(user, getOrCreatePermission(user)));
+        }
+        logger.info("권한 목록 {}명 조회 완료! (관리자: {})", result.size(), uid);
+        return result;
+    }
+
+    // 관리자: 특정 유저 권한 수정
+    @org.springframework.transaction.annotation.Transactional
+    public UserPermissionDTO updatePermission(String uid, Long targetUserId, UserPermissionDTO dto, UserDetails userDetails) {
+        if (userDetails == null || !userDetails.getUsername().equals(uid)) {
+            throw new RuntimeException("권한이 없습니다");
+        }
+        if (!isAdmin(uid)) {
+            throw new RuntimeException("관리자만 권한을 변경할 수 있습니다");
+        }
+        UserEntity target = userRepository.findById(targetUserId)
+                .orElseThrow(() -> new IllegalArgumentException("대상 사용자를 찾을 수 없습니다"));
+        UserPermissionEntity perm = getOrCreatePermission(target);
+        perm.setCanCreate(dto.isCanCreate());
+        perm.setCanRead(dto.isCanRead());
+        perm.setCanUpdate(dto.isCanUpdate());
+        perm.setCanDelete(dto.isCanDelete());
+        userPermissionRepository.save(perm);
+        logger.info("{}번 유저 권한 수정 완료! (관리자: {})", targetUserId, uid);
+        return toPermissionDTO(target, perm);
     }
 
     // 회원 수정 (닉네임/프로필 등 부분 업데이트, 새 이미지가 없으면 기존 프로필 그대로 유지)

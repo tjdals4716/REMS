@@ -3,6 +3,7 @@ package com.example.REMS.Controller;
 import com.example.REMS.DTO.JWTDTO;
 import com.example.REMS.DTO.OAuth2CodeDTO;
 import com.example.REMS.DTO.UserDTO;
+import com.example.REMS.DTO.UserPermissionDTO;
 import com.example.REMS.Service.UserService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.Operation;
@@ -77,6 +78,32 @@ public class UserController {
     @GetMapping("/profile/{uid}")
     public ResponseEntity<Map<String, Object>> getPublicProfile(@PathVariable("uid") String uid) {
         return ResponseEntity.ok(userService.getPublicProfile(uid));
+    }
+
+    // 내 권한 조회 (프론트 버튼/조회 게이팅용)
+    @Operation(summary = "내 권한 조회")
+    @GetMapping("/permission/{uid}")
+    public ResponseEntity<UserPermissionDTO> getMyPermission(@PathVariable("uid") String uid,
+                                                             @AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(userService.getMyPermission(uid, userDetails));
+    }
+
+    // 관리자: 전체 유저 권한 목록
+    @Operation(summary = "권한 목록 조회 (관리자)")
+    @GetMapping("/admin/permissions/{uid}")
+    public ResponseEntity<List<UserPermissionDTO>> getAllPermissions(@PathVariable("uid") String uid,
+                                                                     @AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(userService.getAllPermissions(uid, userDetails));
+    }
+
+    // 관리자: 특정 유저 권한 수정
+    @Operation(summary = "유저 권한 수정 (관리자)")
+    @PutMapping("/admin/permissions/{uid}/{targetId}")
+    public ResponseEntity<UserPermissionDTO> updatePermission(@PathVariable("uid") String uid,
+                                                              @PathVariable("targetId") Long targetId,
+                                                              @RequestBody UserPermissionDTO dto,
+                                                              @AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(userService.updatePermission(uid, targetId, dto, userDetails));
     }
 
     // 회원 삭제
