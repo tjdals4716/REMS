@@ -18,9 +18,9 @@ public class UserPermissionDTO {
     private String name;
     private String nickname;
     private String profileURL;
-    private boolean admin;       // 관리자 여부(uid 고정)
-    private boolean canCreate;
-    private boolean canRead;
-    private boolean canUpdate;
-    private boolean canDelete;
+    private Boolean admin;       // 관리자 여부(uid 고정)
+    private Boolean canCreate;
+    private Boolean canRead;
+    private Boolean canUpdate;
+    private Boolean canDelete;
 }

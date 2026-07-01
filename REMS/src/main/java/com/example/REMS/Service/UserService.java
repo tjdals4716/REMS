@@ -224,10 +224,10 @@ public class UserService {
         UserEntity target = userRepository.findById(targetUserId)
                 .orElseThrow(() -> new IllegalArgumentException("대상 사용자를 찾을 수 없습니다"));
         UserPermissionEntity perm = getOrCreatePermission(target);
-        perm.setCanCreate(dto.isCanCreate());
-        perm.setCanRead(dto.isCanRead());
-        perm.setCanUpdate(dto.isCanUpdate());
-        perm.setCanDelete(dto.isCanDelete());
+        perm.setCanCreate(Boolean.TRUE.equals(dto.getCanCreate()));
+        perm.setCanRead(Boolean.TRUE.equals(dto.getCanRead()));
+        perm.setCanUpdate(Boolean.TRUE.equals(dto.getCanUpdate()));
+        perm.setCanDelete(Boolean.TRUE.equals(dto.getCanDelete()));
         userPermissionRepository.save(perm);
         logger.info("{}번 유저 권한 수정 완료! (관리자: {})", targetUserId, uid);
         return toPermissionDTO(target, perm);
