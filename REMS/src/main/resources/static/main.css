@@ -1169,3 +1169,49 @@ html.mode-web #modal {
     border-radius: 999px; padding: 4px 11px;
 }
 .opt-chip.on { color: var(--blue); background: var(--blue-light); border-color: rgba(26,86,219,0.35); }
+
+/* ===================================================== */
+/* 갤러리 이전/다음 화살표 (웹에서 사진 넘기기)                  */
+/* ===================================================== */
+.gal-nav {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    width: 34px; height: 34px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(255,255,255,0.92); color: var(--gray-800);
+    border: 1px solid rgba(0,0,0,0.08);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+    cursor: pointer; z-index: 5; padding: 0;
+    opacity: 0.55; transition: opacity 0.15s, background 0.15s, transform 0.1s;
+}
+.gallery-wrap:hover .gal-nav { opacity: 1; }
+.gal-nav:hover { background: #fff; }
+.gal-nav:active { transform: translateY(-50%) scale(0.92); }
+.gal-nav.prev { left: 10px; }
+.gal-nav.next { right: 10px; }
+/* 터치 기기(스와이프 가능)에서는 화살표 숨김 */
+@media (hover: none) and (pointer: coarse) {
+    .gal-nav { display: none; }
+}
+
+/* ===================================================== */
+/* 매물 등록자 + 사무소 통합 카드                              */
+/* ===================================================== */
+.owner-agency-card {
+    padding: 12px 14px; margin-bottom: 14px;
+    background: var(--gray-50); border: 1px solid var(--gray-200);
+    border-radius: var(--radius-md);
+}
+.owner-agency-card .oa-top { display: flex; align-items: center; gap: 12px; }
+.oa-agency {
+    margin-top: 12px; padding-top: 12px;
+    border-top: 1px solid var(--gray-200);
+    display: flex; flex-direction: column; gap: 6px;
+}
+.oa-agency-label {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 700; color: var(--gray-500);
+}
+.oa-agency-name { font-size: 14px; font-weight: 700; color: var(--gray-900); }
+.oa-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--gray-700); }
+.oa-row-ic { color: var(--blue); display: inline-flex; flex-shrink: 0; }
+.oa-tel { color: var(--blue); text-decoration: none; font-weight: 600; }

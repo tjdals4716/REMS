@@ -415,24 +415,25 @@ function effectiveStatus(u) {
     return u.status || 'empty';
 }
 
-// 역지오코딩 v2 응답으로 "풀주소(도로명 + 지번)"를 만든다.
-//  예) "서울특별시 강남구 테헤란로 142 (역삼동 681-1)"
-//  · address.roadAddress/jibunAddress 우선, 비어 있으면 results 에서 직접 조합.
+// 역지오코딩 v2 응답으로 "지번 주소"를 만든다. (도로명 미사용)
+//  예) "서울특별시 강남구 역삼동 681-1"
+//  · address.jibunAddress 우선, 비어 있으면 results 의 'addr' 결과로 직접 조합.
+//  · 지번이 정말 없는 위치에서만 최후로 도로명을 반환(빈 주소 방지).
 function buildFullAddress(v2) {
     if (!v2) return '';
     const a = v2.address || {};
-    let road = (a.roadAddress || '').trim();
     let jibun = (a.jibunAddress || '').trim();
-
-    if ((!road || !jibun) && Array.isArray(v2.results)) {
-        v2.results.forEach(r => {
-            const composed = composeAddrFromResult(r);
-            if (r.name === 'roadaddr' && !road) road = composed;
-            if (r.name === 'addr' && !jibun) jibun = composed;
-        });
+    if (!jibun && Array.isArray(v2.results)) {
+        v2.results.forEach(r => { if (r.name === 'addr' && !jibun) jibun = composeAddrFromResult(r); });
     }
-    if (road && jibun && road !== jibun) return `${road} (${jibun})`;
-    return road || jibun || '';
+    if (jibun) return jibun;
+
+    // 지번이 없을 때만 도로명 폴백
+    let road = (a.roadAddress || '').trim();
+    if (!road && Array.isArray(v2.results)) {
+        v2.results.forEach(r => { if (r.name === 'roadaddr' && !road) road = composeAddrFromResult(r); });
+    }
+    return road;
 }
 
 // reverseGeocode results 한 건(region+land)으로 주소 문자열 조합
@@ -502,7 +503,7 @@ async function initMap() {
     // 현재 위치 추적 시작(파란 점). iOS가 아니면 나침반도 바로 연결
     startGeolocationTracking();
     if (!(typeof DeviceOrientationEvent !== 'undefined' &&
-        typeof DeviceOrientationEvent.requestPermission === 'function')) {
+          typeof DeviceOrientationEvent.requestPermission === 'function')) {
         ensureOrientationPermission();
     }
 
@@ -528,13 +529,13 @@ function gotoMyLocation() {
 function centerOnCurrentLocationOnce() {
     if (!navigator.geolocation || !map) return;
     navigator.geolocation.getCurrentPosition(pos => {
-            if (_suppressAutoCenter) return;     // 그 사이 사용자가 지도를 조작했으면 중단
-            const latlng = new naver.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
-            updateGeoMarker(latlng, pos.coords.heading);
-            map.setCenter(latlng);
-            map.setZoom(16);
-        }, () => { /* 거부/실패 → 기본 서울 중심 유지 */ },
-        { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
+        if (_suppressAutoCenter) return;     // 그 사이 사용자가 지도를 조작했으면 중단
+        const latlng = new naver.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
+        updateGeoMarker(latlng, pos.coords.heading);
+        map.setCenter(latlng);
+        map.setZoom(16);
+    }, () => { /* 거부/실패 → 기본 서울 중심 유지 */ },
+       { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
 }
 
 // =====================================================
@@ -1145,17 +1146,16 @@ function showBuildingDetail(b) {
     const body = document.getElementById('sheet-body');
     body.innerHTML = `
     ${renderGallery(b)}
-    <!-- 매물 등록자(커뮤니티 스타일) — 프로필 + 이름 -->
-    <div class="owner-card" id="ownercard-${b.id}">
-      ${avatarHTML(null, 40)}
-      <div style="min-width:0;flex:1;">
-        <div class="owner-card-label">매물 등록자</div>
-        <div class="owner-card-name">불러오는 중…</div>
+    <!-- 매물 등록자 + 공인중개사사무소 통합 카드 (비동기 채움) -->
+    <div class="owner-agency-card" id="ownercard-${b.id}">
+      <div class="oa-top">
+        ${avatarHTML(null, 40)}
+        <div style="min-width:0;flex:1;">
+          <div class="owner-card-label">매물 등록자</div>
+          <div class="owner-card-name">불러오는 중…</div>
+        </div>
       </div>
     </div>
-    <!-- [B] edit by smsong - 공인중개사사무소 정보 (등록자 프로필에서 비동기로 채움) -->
-    <div id="agencycard-${b.id}"></div>
-    <!-- [E] edit by smsong -->
     <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       ${isMine(b) ? `
       <button onclick="openEditBuilding('${b.id}')" style="display:inline-flex;align-items:center;gap:5px;padding:7px 14px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;font-size:13px;font-weight:600;color:#374151;cursor:pointer;">${icon('edit',15)} 건물 수정</button>
@@ -1199,7 +1199,7 @@ function showBuildingDetail(b) {
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
       ${b.parkingAvailable ? '<span class="opt-chip">주차</span>' : ''}
       ${b.petAllowed ? '<span class="opt-chip">애완</span>' : ''}
-      ${b.jeonseLoanAvailable ? `<span class="opt-chip on">전세대출${b.jeonseLoanType ? ' · ' + b.jeonseLoanType : ''}</span>` : ''}
+      ${b.jeonseLoanAvailable ? `<span class="opt-chip on">전세대출${b.jeonseLoanType ? ' · ' + b.jeonseLoanType.split(',').map(s => s.trim()).filter(Boolean).join(', ') : ''}</span>` : ''}
     </div>` : ''}
 
     ${renderUnitStatus(b)}
@@ -1292,16 +1292,35 @@ async function hydrateOwnerCard(b) {
     // [E] edit by smsong
     const mine = isMine(b);
     el.innerHTML = `
-      ${avatarHTML(p, 40)}
-      <div style="min-width:0;flex:1;">
-        <div class="owner-card-label">매물 등록자</div>
-        <div class="owner-card-name">${escapeHtml(name)}${mine ? '<span class="owner-you">나</span>' : ''}</div>
+      <div class="oa-top">
+        ${avatarHTML(p, 40)}
+        <div style="min-width:0;flex:1;">
+          <div class="owner-card-label">매물 등록자</div>
+          <div class="owner-card-name">${escapeHtml(name)}${mine ? '<span class="owner-you">나</span>' : ''}</div>
+        </div>
       </div>
+      ${agencySectionHTML(p)}
     `;
-    // [B] edit by smsong - 공인중개사사무소 정보 카드 렌더
-    const agencyEl = document.getElementById('agencycard-' + b.id);
-    if (agencyEl) agencyEl.innerHTML = agencyCardHTML(p);
-    // [E] edit by smsong
+}
+
+// 통합 카드 내부의 사무소 섹션 (구분선 + 이름/전화/주소). 정보 없으면 '' 반환.
+function agencySectionHTML(p) {
+    if (!p) return '';
+    const name = p.agencyName, phone = p.agencyPhone, addr = p.agencyAddress;
+    if (!name && !phone && !addr) return '';
+    const row = (ic, val, isTel) => val ? `
+      <div class="oa-row">
+        <span class="oa-row-ic">${icon(ic, 15)}</span>
+        ${isTel ? `<a href="tel:${escapeHtml(String(val).replace(/[^0-9+]/g, ''))}" class="oa-tel">${escapeHtml(val)}</a>`
+            : `<span>${escapeHtml(val)}</span>`}
+      </div>` : '';
+    return `
+      <div class="oa-agency">
+        <div class="oa-agency-label">${icon('agency', 14)} 공인중개사사무소</div>
+        ${name ? `<div class="oa-agency-name">${escapeHtml(name)}</div>` : ''}
+        ${row('phone', phone, true)}
+        ${row('pin', addr, false)}
+      </div>`;
 }
 
 // [B] edit by smsong - 공인중개사사무소(이름/전화/주소) 표시 카드. 정보가 하나도 없으면 렌더 안 함.
@@ -1313,7 +1332,7 @@ function agencyCardHTML(p) {
       <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#374151;">
         <span style="color:#1a56db;display:inline-flex;">${icon(ic, 15)}</span>
         ${isTel ? `<a href="tel:${escapeHtml(String(val).replace(/[^0-9+]/g,''))}" style="color:#1a56db;text-decoration:none;font-weight:600;">${escapeHtml(val)}</a>`
-        : `<span>${escapeHtml(val)}</span>`}
+                : `<span>${escapeHtml(val)}</span>`}
       </div>` : '';
     return `
       <div style="margin-bottom:12px;padding:12px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;text-align:left;">
@@ -1394,14 +1413,11 @@ function confirmPickerLocation() {
     //    → 도로명(roadaddr) + 지번(addr) 을 명시해 풀주소를 받는다.
     naver.maps.Service.reverseGeocode({
         coords: center,
-        orders: [
-            naver.maps.Service.OrderType.ROAD_ADDR,
-            naver.maps.Service.OrderType.ADDR
-        ].join(',')
+        orders: 'roadaddr,addr'   // 지번(addr) 확보 — 상수 미정의 SDK 대비 문자열로 직접 지정
     }, function(status, response) {
         let addr = '';
         if (status === naver.maps.Service.Status.OK) {
-            // 풀주소(도로명 + 지번)로 저장 — 예: "서울특별시 강남구 테헤란로 142 (역삼동 681-1)"
+            // 지번 주소로 저장 — 예: "서울특별시 강남구 역삼동 681-1"
             addr = buildFullAddress(response.v2);
         }
         // 좌표를 전달할 때 네이버는 .lat() .lng() 함수를 사용합니다.
@@ -1428,17 +1444,33 @@ function renderGallery(b) {
              onclick="openImageViewer('${u}')" onerror="this.parentElement.style.display='none'">
       </div>`).join('');
 
-    // 이미지가 2장 이상일 때만 카운터/점 표시
+    // 이미지가 2장 이상일 때만 카운터/점/화살표 표시
     const counter = arr.length > 1 ? `<div class="gal-counter" id="${gid}-cnt">1 / ${arr.length}</div>` : '';
     const dots = arr.length > 1
         ? `<div class="gal-dots" id="${gid}-dots">${arr.map((_, i) => `<span class="gal-dot${i === 0 ? ' active' : ''}"></span>`).join('')}</div>`
         : '';
+    // 웹(마우스)에서 스와이프가 안 되므로 이전/다음 화살표로 넘긴다
+    const navs = arr.length > 1 ? `
+      <button class="gal-nav prev" onclick="galleryNav('${gid}',-1,${arr.length},event)" aria-label="이전 사진">${icon('back', 20)}</button>
+      <button class="gal-nav next" onclick="galleryNav('${gid}',1,${arr.length},event)" aria-label="다음 사진">${icon('back', 20, 'transform:rotate(180deg);')}</button>` : '';
 
     return `<div class="gallery-wrap">
       <div class="gal-track" id="${gid}" onscroll="onGalleryScroll('${gid}', ${arr.length})">${slides}</div>
+      ${navs}
       ${counter}
       ${dots}
     </div>`;
+}
+
+// 이전/다음 버튼 → 한 장씩 부드럽게 스크롤(스냅)
+function galleryNav(gid, dir, total, ev) {
+    if (ev) ev.stopPropagation();
+    const track = document.getElementById(gid);
+    if (!track) return;
+    const w = track.clientWidth || 1;
+    let idx = Math.round(track.scrollLeft / w) + dir;
+    idx = Math.max(0, Math.min(total - 1, idx));
+    track.scrollTo({ left: idx * w, behavior: 'smooth' });
 }
 
 // 캐러셀 스크롤 위치 → 카운터/점 인디케이터 갱신
@@ -1588,9 +1620,13 @@ function openBuildingForm(building, lat, lng, addr) {
     <div class="form-group">
       <label class="form-label">전세 대출</label>
       <button type="button" id="f-jeonse-loan" class="toggle-btn full ${building && building.jeonseLoanAvailable ? 'on' : ''}" onclick="toggleJeonseLoan()"><span class="tg-dot"></span>전세 대출 가능</button>
-      <select id="f-jeonse-loan-type" class="form-select" style="margin-top:8px;display:${building && building.jeonseLoanAvailable ? 'block' : 'none'};">
-        ${['HUG','HF','SGI','버팀목','LH'].map(v => `<option value="${v}" ${building && building.jeonseLoanType === v ? 'selected' : ''}>${v}</option>`).join('')}
-      </select>
+      <div class="toggle-row" id="f-jeonse-loan-types" style="flex-wrap:wrap;margin-top:8px;display:${building && building.jeonseLoanAvailable ? 'flex' : 'none'};">
+        ${(() => {
+        const sel = new Set(((building && building.jeonseLoanType) || '').split(',').map(s => s.trim()).filter(Boolean));
+        return ['HUG', 'HF', 'SGI', '버팀목', 'LH'].map(v =>
+            `<button type="button" class="toggle-btn ${sel.has(v) ? 'on' : ''}" data-loan="${v}" onclick="this.classList.toggle('on')" style="flex:0 0 auto;padding:8px 14px;">${v}</button>`).join('');
+    })()}
+      </div>
     </div>
     <div class="form-group">
       <label class="form-label">사진/미디어 <span style="font-weight:400;color:#9ca3af;">(최대 ${MAX_BUILDING_IMAGES}장 · <span id="bf-count">0 / ${MAX_BUILDING_IMAGES}</span>)</span></label>
@@ -1633,7 +1669,9 @@ async function saveBuilding(id, lat, lng) {
         rent: dealType === 'monthly' ? (parseInt(document.getElementById('f-rent').value) || 0) : 0,
         manage: parseInt(document.getElementById('f-manage').value) || 0,
         jeonseLoanAvailable,
-        jeonseLoanType: jeonseLoanAvailable ? document.getElementById('f-jeonse-loan-type').value : null,
+        jeonseLoanType: jeonseLoanAvailable
+            ? Array.from(document.querySelectorAll('#f-jeonse-loan-types .toggle-btn.on')).map(x => x.dataset.loan).join(',')
+            : null,
         parkingAvailable: document.getElementById('f-parking').classList.contains('on'),
         petAllowed: document.getElementById('f-pet').classList.contains('on'),
         lat: parseFloat(lat), lng: parseFloat(lng)
@@ -1884,9 +1922,9 @@ function selectStatus(status) {
 // 전세 대출 가능 토글 — 켜지면 대출 종류 콤보박스 노출
 function toggleJeonseLoan() {
     const btn = document.getElementById('f-jeonse-loan');
-    const sel = document.getElementById('f-jeonse-loan-type');
+    const box = document.getElementById('f-jeonse-loan-types');
     const on = btn.classList.toggle('on');
-    if (sel) sel.style.display = on ? 'block' : 'none';
+    if (box) box.style.display = on ? 'flex' : 'none';
 }
 
 // 거래유형 선택 — scope='f'(건물) 또는 'uf'(호실).
