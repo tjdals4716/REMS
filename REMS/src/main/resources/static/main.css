@@ -1249,3 +1249,31 @@ html.mode-web #modal {
 }
 .perm-save:disabled { opacity: 0.7; cursor: default; }
 .perm-locked { font-size: 11.5px; color: var(--gray-400); font-weight: 600; padding: 0 8px; }
+
+/* ===================================================== */
+/* 계약자·임차인 관리 리스트 (관리자 탭)                        */
+/* ===================================================== */
+.tenant-card {
+    padding: 13px 14px; margin-bottom: 8px;
+    border: 1px solid var(--gray-200); border-radius: var(--radius-md);
+    background: var(--white); cursor: pointer;
+    transition: box-shadow 0.15s, border-color 0.15s, transform 0.08s;
+}
+.tenant-card:hover { box-shadow: var(--shadow-sm); border-color: var(--blue-light); }
+.tenant-card:active { transform: scale(0.995); }
+.tenant-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.tenant-bldg {
+    font-size: 14.5px; font-weight: 700; color: var(--gray-900);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tenant-unit {
+    font-size: 11px; font-weight: 700; color: var(--blue);
+    background: var(--blue-light); border-radius: 6px; padding: 1px 7px; margin-left: 2px;
+}
+.tenant-phone {
+    flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px;
+    font-size: 12.5px; font-weight: 600; color: var(--gray-600);
+}
+.tenant-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 7px; flex-wrap: wrap; }
+.tenant-price { font-size: 13px; font-weight: 800; color: var(--blue); letter-spacing: -0.2px; }
+.tenant-period { font-size: 11.5px; color: var(--gray-400); font-weight: 600; }

@@ -186,6 +186,16 @@ const Api = {
     updatePermission: (targetId, dto) =>
         fetch(`${API_BASE_URL}/user/admin/permissions/${getUid()}/${targetId}`, { method: 'PUT', headers: authHeaders(true), body: JSON.stringify(dto) }).then(handleResponse),
 
+    // 계약자·임차인 관리 (중개사 전용)
+    getTenants: () =>
+        fetch(`${API_BASE_URL}/tenant/${getUid()}`, { headers: authHeaders() }).then(handleResponse),
+    createTenant: (dto) =>
+        fetch(`${API_BASE_URL}/tenant/${getUid()}`, { method: 'POST', headers: authHeaders(true), body: JSON.stringify(dto) }).then(handleResponse),
+    updateTenant: (id, dto) =>
+        fetch(`${API_BASE_URL}/tenant/${getUid()}/${id}`, { method: 'PUT', headers: authHeaders(true), body: JSON.stringify(dto) }).then(handleResponse),
+    deleteTenant: (id) =>
+        fetch(`${API_BASE_URL}/tenant/${getUid()}/${id}`, { method: 'DELETE', headers: authHeaders() }).then(handleResponse),
+
     // 장소 검색 (/api/search/place) — 네이버 지역검색 프록시. 지도 중심(lat/lng)을 주면 가까운 순으로 정렬됨
     searchPlace: (query, lat, lng) => {
         let qs = `query=${encodeURIComponent(query)}`;
@@ -218,6 +228,11 @@ function isAdminUser() {
     const u = getCurrentUser();
     return !!(u && u.uid === ADMIN_UID);
 }
+// 중개사 여부 — 관리자이거나 공인중개사사무소 정보를 등록한 회원
+function isBroker() {
+    const u = getCurrentUser();
+    return !!(u && (u.uid === ADMIN_UID || (u.agencyName && String(u.agencyName).trim())));
+}
 // 현재 로그인 유저의 유효 권한. 관리자는 항상 전체 허용. 로드 전 기본값은 조회만 허용.
 function myPerms() {
     if (isAdminUser()) return { admin: true, canCreate: true, canRead: true, canUpdate: true, canDelete: true };
@@ -236,6 +251,9 @@ function applyPermUI() {
     const p = myPerms();
     const add = document.getElementById('add-btn-float');
     if (add) add.style.display = p.canCreate ? '' : 'none';
+    // '관리자'(계약자 관리) 탭은 중개사에게만 노출
+    const adminTab = document.querySelector('.nav-tab[data-tab="stats"]');
+    if (adminTab) adminTab.style.display = isBroker() ? '' : 'none';
 }
 
 // HTML/속성 이스케이프 (이름에 <, ", & 등이 들어가도 마크업이 깨지지 않게)
@@ -2059,71 +2077,150 @@ async function deleteUnit(buildingId, unitId) {
 }
 
 // =====================================================
-// STATS TAB
+// 관리자 탭 — 계약자·임차인 관리 리스트 (중개사 전용)
 // =====================================================
-function showStatsView() {
+let _tenants = [];   // 계약자 목록 캐시
+
+function showStatsView() {   // (하단 '관리자' 탭 진입점 — 기존 호출부 호환 위해 이름 유지)
     const body = document.getElementById('sheet-body');
-    let totalRent = 0, totalDeposit = 0;
-    let allEmpty = 0, allOccupied = 0, allExpiring = 0;
-    let totalUnits = 0;
+    document.getElementById('sheet-title').textContent = '계약자 임차인 관리 리스트';
+    document.getElementById('sheet-subtitle').textContent = '중개사 전용 · 계약자/임차인 정보 관리';
 
-    state.buildings.forEach(b => {
-        const s = getUnitStats(b);
-        allEmpty += s.empty; allOccupied += s.occupied; allExpiring += s.expiring;
-        totalUnits += s.total;
-        b.units.forEach(u => {
-            if (u.status !== 'empty') {
-                totalRent += u.rent || 0;
-                totalDeposit += u.deposit || 0;
-            }
-        });
-    });
-
-    const pct = totalUnits > 0 ? Math.round((allOccupied / totalUnits) * 100) : 0;
-
-    document.getElementById('sheet-title').textContent = '수익 현황';
-    document.getElementById('sheet-subtitle').textContent = '전체 건물 통합 집계';
+    if (!isBroker()) {
+        body.innerHTML = `<div class="empty-state">
+          <div class="empty-state-icon">${icon('lock', 56, 'color:#9ca3af;')}</div>
+          <div class="empty-state-title">중개사 전용 기능입니다</div>
+          <div class="empty-state-sub">‘내 정보 수정’에서 공인중개사사무소 정보를 등록하면 이용할 수 있습니다</div>
+        </div>`;
+        return;
+    }
 
     body.innerHTML = `
-    <div class="building-info-grid">
-      <div class="info-card"><div class="info-card-label">월 수입 합계</div><div class="info-card-value" style="color:#1a56db;">${totalRent.toLocaleString()}만원</div></div>
-      <div class="info-card"><div class="info-card-label">보증금 합계</div><div class="info-card-value">${(totalDeposit/10000).toFixed(1)}억원</div></div>
-      <div class="info-card"><div class="info-card-label">점유율</div><div class="info-card-value" style="color:#0d9451;">${pct}%</div></div>
-      <div class="info-card"><div class="info-card-label">공실</div><div class="info-card-value" style="color:#dc2626;">${allEmpty}호</div></div>
-    </div>
-
-    <div style="margin:8px 0;padding:14px;background:#f9fafb;border-radius:12px;">
-      <div style="font-size:13px;font-weight:700;color:#374151;margin-bottom:10px;">점유율 현황</div>
-      <div style="display:flex;gap:4px;height:20px;border-radius:10px;overflow:hidden;">
-        <div style="flex:${allOccupied};background:#0d9451;" title="임차중"></div>
-        <div style="flex:${allExpiring};background:#d97706;" title="만기임박"></div>
-        <div style="flex:${allEmpty};background:#dc2626;" title="공실"></div>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
+        <button onclick="openTenantForm()" style="display:inline-flex;align-items:center;gap:5px;padding:8px 14px;border-radius:9px;border:none;background:#1a56db;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">${icon('plus', 15)} 계약자 추가</button>
       </div>
-      <div style="display:flex;gap:14px;margin-top:8px;">
-        <div style="font-size:12px;color:#0d9451;font-weight:600;">● 임차 ${allOccupied}호</div>
-        <div style="font-size:12px;color:#d97706;font-weight:600;">● 만기임박 ${allExpiring}호</div>
-        <div style="font-size:12px;color:#dc2626;font-weight:600;">● 공실 ${allEmpty}호</div>
-      </div>
-    </div>
+      <div id="tenant-list"><div style="padding:24px;text-align:center;color:#9ca3af;font-size:13px;">불러오는 중…</div></div>
+    `;
+    loadTenants();
+}
 
-    <div style="font-size:13px;font-weight:700;color:#374151;margin:12px 0 8px;">건물별 현황</div>
-    ${state.buildings.map(b => {
-        const s = getUnitStats(b);
-        const r = b.units.filter(u=>u.status==='occupied').reduce((acc,u)=>acc+(u.rent||0),0);
-        return `<div style="padding:12px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;margin-bottom:8px;cursor:pointer;" onclick="selectBuilding('${b.id}');switchTab('map')">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <div>
-            <div style="display:flex;align-items:center;gap:6px;font-size:14px;font-weight:700;color:#111;">${typeIcon(b.type,16)} ${b.name}</div>
-            <div style="font-size:12px;color:#6b7280;margin-top:2px;">${s.total}호 중 임차 ${s.occupied}호 · 공실 ${s.empty}호</div>
+async function loadTenants() {
+    const box = document.getElementById('tenant-list');
+    try {
+        _tenants = (await Api.getTenants()) || [];
+        _tenants.forEach(t => t.id = String(t.id));
+    } catch (e) {
+        _tenants = [];
+        if (box) box.innerHTML = `<div style="padding:20px;text-align:center;color:#dc2626;font-size:13px;">불러오기 실패: ${escapeHtml(e.message)}</div>`;
+        return;
+    }
+    renderTenantList();
+}
+
+function renderTenantList() {
+    const box = document.getElementById('tenant-list');
+    if (!box) return;
+    if (!_tenants.length) {
+        box.innerHTML = `<div class="empty-state">
+          <div class="empty-state-icon">${icon('user', 52, 'color:#9ca3af;')}</div>
+          <div class="empty-state-title">등록된 계약자가 없습니다</div>
+          <div class="empty-state-sub">‘계약자 추가’로 첫 계약자를 등록해보세요</div>
+        </div>`;
+        return;
+    }
+    box.innerHTML = _tenants.map(t => {
+        const priceLine = (t.rent > 0)
+            ? `보 ${(t.deposit || 0).toLocaleString()} / 월 ${t.rent.toLocaleString()}`
+            : `보증금 ${(t.deposit || 0).toLocaleString()}만`;
+        const period = (t.contractStart || t.contractEnd) ? `${t.contractStart || '?'} ~ ${t.contractEnd || '?'}` : '';
+        return `<div class="tenant-card" onclick="openTenantForm('${t.id}')">
+          <div class="tenant-top">
+            <div class="tenant-bldg">${escapeHtml(t.buildingName || '건물 미입력')}${t.unitName ? ` <span class="tenant-unit">${escapeHtml(t.unitName)}</span>` : ''}</div>
+            <div class="tenant-phone">${icon('phone', 13)} ${escapeHtml(t.phone || '-')}</div>
           </div>
-          <div style="text-align:right;">
-            <div style="font-size:15px;font-weight:700;color:#1a56db;">${r.toLocaleString()}만</div>
-            <div style="font-size:11px;color:#9ca3af;">월 수입</div>
+          <div class="tenant-meta">
+            <span class="tenant-price">${priceLine}${(t.manage || 0) > 0 ? ` · 관리 ${t.manage}만` : ''}</span>
+            ${period ? `<span class="tenant-period">${escapeHtml(period)}</span>` : ''}
           </div>
-        </div>
+        </div>`;
+    }).join('');
+}
+
+// 계약자 추가/수정 폼 (건물/호실 추가와 동일한 모달 스타일)
+function openTenantForm(id) {
+    const t = id ? _tenants.find(x => x.id === id) : null;
+    const isEdit = !!t;
+    document.getElementById('modal-title').textContent = isEdit ? '계약자 수정' : '계약자 추가';
+    const f = (label, fid, val, ph, type) => `
+      <div class="form-group">
+        <label class="form-label">${label}</label>
+        <input id="${fid}" class="form-input" type="${type || 'text'}" placeholder="${ph || ''}" value="${val != null ? escapeHtml(String(val)) : ''}">
       </div>`;
-    }).join('')}
-  `;
+    document.getElementById('modal-body').innerHTML = `
+      ${f('전화번호', 'tf-phone', t ? t.phone : '', '010-0000-0000', 'tel')}
+      ${f('건물명', 'tf-bldg', t ? t.buildingName : '', '예: 강남빌딩')}
+      ${f('호실', 'tf-unit', t ? t.unitName : '', '예: 201호')}
+      <div class="form-row">
+        ${f('보증금 (만원)', 'tf-deposit', t ? (t.deposit || '') : '', '0', 'number')}
+        ${f('월세 (만원)', 'tf-rent', t ? (t.rent || '') : '', '0', 'number')}
+      </div>
+      ${f('관리비 (만원)', 'tf-manage', t ? (t.manage || '') : '', '0', 'number')}
+      <div class="form-row">
+        ${f('계약 시작', 'tf-start', t ? t.contractStart : '', '', 'date')}
+        ${f('계약 만료', 'tf-end', t ? t.contractEnd : '', '', 'date')}
+      </div>
+    `;
+    document.getElementById('modal-footer').innerHTML = `
+      ${isEdit && myPerms().canDelete ? `<button class="btn-danger" onclick="deleteTenant('${t.id}')">삭제</button>` : ''}
+      <button class="btn-secondary" onclick="closeModal()">취소</button>
+      <button class="btn-primary" onclick="saveTenant('${isEdit ? t.id : ''}')">저장</button>
+    `;
+    showModal();
+}
+
+async function saveTenant(id) {
+    if (_isSubmitting) return;
+    const phone = document.getElementById('tf-phone').value.trim();
+    const buildingName = document.getElementById('tf-bldg').value.trim();
+    if (!phone && !buildingName) { showToast('전화번호 또는 건물명을 입력하세요'); return; }
+    const dto = {
+        phone,
+        buildingName,
+        unitName: document.getElementById('tf-unit').value.trim(),
+        deposit: parseInt(document.getElementById('tf-deposit').value) || 0,
+        rent: parseInt(document.getElementById('tf-rent').value) || 0,
+        manage: parseInt(document.getElementById('tf-manage').value) || 0,
+        contractStart: document.getElementById('tf-start').value,
+        contractEnd: document.getElementById('tf-end').value
+    };
+    showLoading(id ? '계약자 정보를 저장하는 중…' : '계약자를 추가하는 중…');
+    try {
+        if (id) await Api.updateTenant(id, dto);
+        else await Api.createTenant(dto);
+        closeModal();
+        await loadTenants();
+        showToast(id ? '계약자 정보가 수정되었습니다' : '계약자가 추가되었습니다');
+    } catch (e) {
+        showToast('저장 실패: ' + e.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+async function deleteTenant(id) {
+    if (_isSubmitting) return;
+    if (!confirm('이 계약자를 삭제하시겠습니까?')) return;
+    showLoading('계약자를 삭제하는 중…');
+    try {
+        await Api.deleteTenant(id);
+        closeModal();
+        await loadTenants();
+        showToast('계약자가 삭제되었습니다');
+    } catch (e) {
+        showToast('삭제 실패: ' + e.message);
+    } finally {
+        hideLoading();
+    }
 }
 
 function showSettingsView() {
