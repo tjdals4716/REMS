@@ -646,6 +646,8 @@ html:not(.mode-web) #bottom-sheet[data-mode="tab"] { height: 88vh; height: 88dvh
 
 /* 매물 생성(위치 설정) 중: 상단바를 숨기고, 안내 헤더를 위에·검색창을 그 아래에 배치 */
 #app.picker-active #topbar { opacity: 0; pointer-events: none; transform: translateY(-8px); }
+/* 위치 설정(피커) 중에는 하단 메뉴를 계속 숨김 → 지도 몰입 상태에서 + 를 눌러도 메뉴가 다시 올라오지 않음 */
+#app.picker-active #bottom-nav { transform: translateY(130%); }
 #app.picker-active #map-picker-bar {
     top: calc(env(safe-area-inset-top, 0px) + 8px); left: 12px; right: 12px;
     border-radius: var(--radius-md);
@@ -660,6 +662,8 @@ html:not(.mode-web) #bottom-sheet[data-mode="tab"] { height: 88vh; height: 88dvh
     opacity: 0; pointer-events: none; transform: translateY(-14px);
 }
 #app.chrome-hidden #map-picker-confirm { bottom: max(26px, env(safe-area-inset-bottom)); }
+/* 피커 중엔 하단 메뉴가 없으므로 확인 버튼을 아래로 */
+#app.picker-active #map-picker-confirm { bottom: max(26px, env(safe-area-inset-bottom)); }
 
 /* 2) 몰입 모드 — 지도 클릭 시 상단은 위로, 하단은 아래로 슬라이드 아웃 */
 #app.chrome-hidden #topbar { transform: translateY(-130%); }
