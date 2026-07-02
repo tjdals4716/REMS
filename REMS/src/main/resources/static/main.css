@@ -293,6 +293,7 @@ html:not(.mode-web) #bottom-sheet[data-mode="tab"] { height: 88vh; height: 88dvh
     border-top: 1px solid var(--gray-100);
     display: flex; gap: 10px;
 }
+.modal-footer:empty { display: none; }   /* 버튼 없으면 영역 자체를 없앰 */
 
 /* FORM ELEMENTS */
 .form-group { margin-bottom: 16px; }
@@ -369,9 +370,9 @@ html:not(.mode-web) #bottom-sheet[data-mode="tab"] { height: 88vh; height: 88dvh
     padding-bottom: max(6px, env(safe-area-inset-bottom));
 }
 .nav-tab {
-    flex: 1; display: flex; flex-direction: column; align-items: center;
+    flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center;
     gap: 4px; padding: 7px 0; cursor: pointer;
-    color: var(--gray-400); font-size: 10.5px; font-weight: 600;
+    color: var(--gray-400); font-size: 10px; font-weight: 600; white-space: nowrap;
     border: none; background: none; font-family: var(--font);
     border-radius: 14px;
     transition: color 0.2s ease, background 0.2s ease, transform 0.12s ease;

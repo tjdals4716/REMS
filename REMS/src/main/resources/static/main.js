@@ -403,6 +403,8 @@ async function loadData(isInitial) {
         (buildings || []).forEach(b => {
             b.id = String(b.id);
             b.units = (b.units || []).map(u => ({ ...u, id: String(u.id) }));
+            // 계약 만료일이 지난(당일 포함) 임차중/만기임박 호실은 자동으로 '공실' 처리
+            b.units.forEach(u => { u.status = effectiveStatus(u); });
         });
         state.buildings = buildings || [];
     } catch (e) {
@@ -429,6 +431,7 @@ let pickerLatlng = null;
 let currentBuilding = null;
 let activeFilter = 'all';
 let activeTab = 'map';
+let listMineOnly = false;   // '내 목록' 탭이면 내 건물만 표시
 
 const STATUS_COLOR = { empty: '#dc2626', occupied: '#0d9451', expiring: '#d97706' };
 const STATUS_LABEL = { empty: '공실', occupied: '임차', expiring: '만기임박' };
@@ -563,7 +566,7 @@ async function initMap() {
     // 현재 위치 추적 시작(파란 점). iOS가 아니면 나침반도 바로 연결
     startGeolocationTracking();
     if (!(typeof DeviceOrientationEvent !== 'undefined' &&
-        typeof DeviceOrientationEvent.requestPermission === 'function')) {
+          typeof DeviceOrientationEvent.requestPermission === 'function')) {
         ensureOrientationPermission();
     }
 
@@ -589,13 +592,13 @@ function gotoMyLocation() {
 function centerOnCurrentLocationOnce() {
     if (!navigator.geolocation || !map) return;
     navigator.geolocation.getCurrentPosition(pos => {
-            if (_suppressAutoCenter) return;     // 그 사이 사용자가 지도를 조작했으면 중단
-            const latlng = new naver.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
-            updateGeoMarker(latlng, pos.coords.heading);
-            map.setCenter(latlng);
-            map.setZoom(16);
-        }, () => { /* 거부/실패 → 기본 서울 중심 유지 */ },
-        { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
+        if (_suppressAutoCenter) return;     // 그 사이 사용자가 지도를 조작했으면 중단
+        const latlng = new naver.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
+        updateGeoMarker(latlng, pos.coords.heading);
+        map.setCenter(latlng);
+        map.setZoom(16);
+    }, () => { /* 거부/실패 → 기본 서울 중심 유지 */ },
+       { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
 }
 
 // =====================================================
@@ -1127,12 +1130,14 @@ function showBuildingList() {
             `<div class="empty-state-sub">관리자가 조회 권한을 켜면 목록이 표시됩니다</div></div>`;
         return;
     }
-    const list = state.buildings.filter(matchesFilter);
+    let list = state.buildings.filter(matchesFilter);
+    if (listMineOnly) list = list.filter(isMine);           // 내 목록: 내 건물만
     const dealName = DEAL_LABEL[activeFilter];
-    document.getElementById('sheet-title').textContent = dealName ? `${dealName} 매물` : '내 건물 목록';
+    const baseTitle = listMineOnly ? '내 건물 목록' : '전체 목록';
+    document.getElementById('sheet-title').textContent = dealName ? `${dealName} 매물` : baseTitle;
     document.getElementById('sheet-subtitle').textContent =
         (activeFilter === 'all')
-            ? `총 ${state.buildings.length}개 건물 관리중`
+            ? (listMineOnly ? `내 건물 ${list.length}개` : `총 ${state.buildings.length}개 건물`)
             : `${list.length}개 매물 (필터 적용중)`;
 
     const body = document.getElementById('sheet-body');
@@ -1383,7 +1388,7 @@ function agencySectionHTML(p) {
       <div class="oa-row">
         <span class="oa-row-ic">${icon(ic, 15)}</span>
         ${isTel ? `<a href="tel:${escapeHtml(String(val).replace(/[^0-9+]/g, ''))}" class="oa-tel">${escapeHtml(val)}</a>`
-        : `<span>${escapeHtml(val)}</span>`}
+            : `<span>${escapeHtml(val)}</span>`}
       </div>` : '';
     return `
       <div class="oa-agency">
@@ -1403,7 +1408,7 @@ function agencyCardHTML(p) {
       <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#374151;">
         <span style="color:#1a56db;display:inline-flex;">${icon(ic, 15)}</span>
         ${isTel ? `<a href="tel:${escapeHtml(String(val).replace(/[^0-9+]/g,''))}" style="color:#1a56db;text-decoration:none;font-weight:600;">${escapeHtml(val)}</a>`
-        : `<span>${escapeHtml(val)}</span>`}
+                : `<span>${escapeHtml(val)}</span>`}
       </div>` : '';
     return `
       <div style="margin-bottom:12px;padding:12px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;text-align:left;">
@@ -1823,7 +1828,8 @@ function openUnitDetail(buildingId, unitId) {
     const ddayHtml = u.contractEnd ? (() => {
         const daysLeft = Math.ceil((new Date(u.contractEnd) - new Date()) / 86400000);
         const color = daysLeft < 90 ? '#dc2626' : daysLeft < 180 ? '#d97706' : '#0d9451';
-        return `<div style="padding:10px 12px;background:#f9fafb;border-radius:10px;font-size:13px;margin-top:8px;color:${color};font-weight:600;">만기까지 D-${daysLeft > 0 ? daysLeft : '만기'}</div>`;
+        const dateStr = String(u.contractEnd).replace(/-/g, '.');   // 2026-07-30 → 2026.07.30
+        return `<div style="padding:10px 12px;background:#f9fafb;border-radius:10px;font-size:13px;margin-top:8px;color:${color};font-weight:600;">${dateStr} 만기</div>`;
     })() : '';
 
     document.getElementById('modal-body').innerHTML = `
@@ -2300,8 +2306,7 @@ async function openPermissionManager() {
     document.getElementById('modal-title').textContent = '권한 관리';
     document.getElementById('modal-body').innerHTML =
         '<div style="padding:28px;text-align:center;color:#9ca3af;font-size:13px;">유저 목록 불러오는 중…</div>';
-    document.getElementById('modal-footer').innerHTML =
-        `<button class="btn-secondary" onclick="closeModal()">닫기</button>`;
+    document.getElementById('modal-footer').innerHTML = '';   // 닫기 버튼/영역 제거 (헤더 X로 닫기)
     showModal();
     try {
         const list = await Api.listPermissions();
@@ -2688,14 +2693,16 @@ function switchTab(tab) {
 
     if (tab === 'map') {
         markTab('map');
+        listMineOnly = false;
         showBuildingList();              // 지도와 함께 보일 목록을 peek 콘텐츠로
         Sheet.collapse();                // 완전히 닫지 않고 살짝 남김(peek)
         return;
     }
 
-    // 목록/현황/설정 — 지도를 배경에 깔아둔 채 시트(폼)로 띄움 (네이버 지도 스타일)
+    // 목록/내목록/임차인관리/설정 — 지도를 배경에 깔아둔 채 시트(폼)로 띄움 (네이버 지도 스타일)
     markTab(tab);
-    if (tab === 'list') showBuildingList();
+    if (tab === 'list') { listMineOnly = false; showBuildingList(); }
+    else if (tab === 'mylist') { listMineOnly = true; showBuildingList(); }
     else if (tab === 'stats') showStatsView();
     else if (tab === 'settings') showSettingsView();
     Sheet.open('tab', 'full');
