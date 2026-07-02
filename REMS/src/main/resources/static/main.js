@@ -1815,17 +1815,46 @@ function openUnitDetail(buildingId, unitId) {
     if (!u) return;
 
     document.getElementById('modal-title').textContent = `${u.name} 상세`;
-    document.getElementById('modal-body').innerHTML = `
-    <div class="unit-tabs">
-      <div class="unit-tab active" onclick="switchUnitTab('info')">기본정보</div>
-      <div class="unit-tab" onclick="switchUnitTab('contract')">계약정보</div>
-      <div class="unit-tab" onclick="switchUnitTab('memo')">메모</div>
-    </div>
-    <div id="unit-tab-content"></div>
-  `;
 
-    window._unitTabData = { buildingId, unitId, u };
-    renderUnitTab('info');
+    const statusColors = { empty: '#dc2626', occupied: '#0d9451', expiring: '#d97706' };
+    const statusBg = { empty: '#fee2e2', occupied: '#d1fae5', expiring: '#fef3c7' };
+    const st = effectiveStatus(u);
+    const d = inferDeal(u);
+    const ddayHtml = u.contractEnd ? (() => {
+        const daysLeft = Math.ceil((new Date(u.contractEnd) - new Date()) / 86400000);
+        const color = daysLeft < 90 ? '#dc2626' : daysLeft < 180 ? '#d97706' : '#0d9451';
+        return `<div style="padding:10px 12px;background:#f9fafb;border-radius:10px;font-size:13px;margin-top:8px;color:${color};font-weight:600;">만기까지 D-${daysLeft > 0 ? daysLeft : '만기'}</div>`;
+    })() : '';
+
+    document.getElementById('modal-body').innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+      <div style="display:inline-block;padding:5px 12px;border-radius:20px;background:${statusBg[st]};color:${statusColors[st]};font-size:13px;font-weight:700;">${STATUS_LABEL[st]}</div>
+      ${dealBadge(u, 12)}
+    </div>
+
+    <div class="form-section-title">기본 정보</div>
+    <div class="building-info-grid">
+      <div class="info-card"><div class="info-card-label">호실</div><div class="info-card-value">${escapeHtml(u.name || '')}</div></div>
+      <div class="info-card"><div class="info-card-label">면적</div><div class="info-card-value">${u.area}㎡</div></div>
+      <div class="info-card"><div class="info-card-label">유형</div><div class="info-card-value">${TYPE_LABEL[u.type] || {residential:'주거용',office:'사무용'}[u.type] || u.type}</div></div>
+      <div class="info-card"><div class="info-card-label">거래</div><div class="info-card-value">${DEAL_LABEL[d]}</div></div>
+    </div>
+    ${u.createdAt ? `<div style="font-size:11.5px;color:#9ca3af;margin-top:10px;">등록일 ${formatDate(u.createdAt)}</div>` : ''}
+
+    <div class="form-section-title" style="margin-top:16px;">계약 정보</div>
+    <div class="building-info-grid">
+      <div class="info-card"><div class="info-card-label">${d === 'sale' ? '매매가' : d === 'jeonse' ? '전세금' : '보증금'}</div><div class="info-card-value">${u.deposit ? u.deposit.toLocaleString()+'만원' : '—'}</div></div>
+      ${(d !== 'sale' && (u.rent || 0) > 0) ? `<div class="info-card"><div class="info-card-label">월세</div><div class="info-card-value">${u.rent.toLocaleString()}만원</div></div>` : ''}
+      <div class="info-card"><div class="info-card-label">관리비</div><div class="info-card-value">${u.manage ? u.manage+'만원' : '—'}</div></div>
+      <div class="info-card"><div class="info-card-label">계약기간</div><div class="info-card-value" style="font-size:12px;">${u.contractStart ? u.contractStart+'~'+u.contractEnd : '—'}</div></div>
+    </div>
+    ${ddayHtml}
+
+    <div class="form-section-title" style="margin-top:16px;">메모</div>
+    <div style="padding:12px;background:#f9fafb;border-radius:10px;font-size:14px;color:#374151;min-height:60px;">
+      ${u.memo ? escapeHtml(u.memo) : '<span style="color:#9ca3af;">메모가 없습니다</span>'}
+    </div>
+  `;
 
     document.getElementById('modal-footer').innerHTML = `
     <button class="btn-secondary" onclick="closeModal()">닫기</button>
@@ -2297,7 +2326,6 @@ function renderPermissionList(list) {
       <div class="perm-row" data-user-id="${u.userId}">
         <div class="perm-user">
           <div class="perm-name">${escapeHtml(u.name || u.nickname || u.uid)}${u.admin ? '<span class="perm-admin">관리자</span>' : ''}</div>
-          <div class="perm-uid">${escapeHtml(u.uid)}</div>
         </div>
         ${u.admin ? '<span class="perm-locked">관리자 (고정)</span>' : `
         <div class="perm-toggles" role="group">
